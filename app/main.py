@@ -252,6 +252,7 @@ If the user mentions items that look like these shorthands (even with minor typo
     response = client.chat.completions.create(
         model="gpt-4.1-mini",
         response_format={"type": "json_object"},
+        temperature=0,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": text},
@@ -306,6 +307,7 @@ If the items resemble these shorthands (even with minor typos), use the provided
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         response_format={"type": "json_object"},
+        temperature=0,
         messages=[
             {"role": "system", "content": system_prompt},
             {
