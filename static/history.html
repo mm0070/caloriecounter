@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Calorie Tracker - History</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 1rem;
+      max-width: 720px;
+      margin-inline: auto;
+      background: #f5f5f5;
+    }
+    h1 {
+      margin: 0;
+    }
+    .card {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+    .stat {
+      background: #fafafa;
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.9rem;
+    }
+    .stat-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      opacity: 0.7;
+    }
+    .stat-value {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    .entries-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .entry {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #eee;
+    }
+    .entry:last-child {
+      border-bottom: none;
+    }
+    .entry-main {
+      font-size: 0.95rem;
+      margin-bottom: 0.15rem;
+    }
+    .entry-meta {
+      font-size: 0.8rem;
+      opacity: 0.75;
+    }
+    .entry-empty {
+      display: block;
+      text-align: center;
+      opacity: 0.7;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    input[type="date"] {
+      padding: 0.5rem;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 1rem;
+    }
+    .error {
+      color: #b91c1c;
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+    <h1>History</h1>
+    <nav style="display:flex;gap:0.5rem;font-size:0.95rem;">
+      <a href="/static/index.html">Today</a>
+      <a href="/static/history.html">History</a>
+      <a href="/static/notes.html">Notes</a>
+    </nav>
+  </header>
+
+  <div class="card">
+    <div class="controls">
+      <label for="day-input"><strong>Select day:</strong></label>
+      <input type="date" id="day-input" />
+    </div>
+    <div class="error" id="error"></div>
+  </div>
+
+  <div class="card">
+    <h2>Daily total</h2>
+    <div class="stats-grid" id="day-stats"></div>
+  </div>
+
+  <div class="card">
+    <h2>Entries</h2>
+    <ul class="entries-list" id="entries"></ul>
+  </div>
+
+  <script>
+    const statsEl = document.getElementById("day-stats");
+    const entriesEl = document.getElementById("entries");
+    const dayInput = document.getElementById("day-input");
+    const errorEl = document.getElementById("error");
+
+    function renderStats(stats) {
+      statsEl.innerHTML = `
+        <div class="stat">
+          <div class="stat-title">Calories</div>
+          <div class="stat-value">${stats.total_calories.toFixed(0)} kcal</div>
+        </div>
+        <div class="stat">
+          <div class="stat-title">Protein</div>
+          <div class="stat-value">${stats.total_protein.toFixed(1)} g</div>
+        </div>
+        <div class="stat">
+          <div class="stat-title">Carbs</div>
+          <div class="stat-value">${stats.total_carbs.toFixed(1)} g</div>
+        </div>
+        <div class="stat">
+          <div class="stat-title">Fat</div>
+          <div class="stat-value">${stats.total_fat.toFixed(1)} g</div>
+        </div>
+      `;
+    }
+
+    function renderEntries(entries) {
+      if (!entries.length) {
+        entriesEl.innerHTML = '<li class="entry entry-empty">No entries for this day.</li>';
+        return;
+      }
+      entriesEl.innerHTML = entries.map(e => {
+        const dt = new Date(e.ts);
+        const timeStr = dt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+        return `
+          <li class="entry">
+            <div class="entry-main">${e.description}</div>
+            <div class="entry-meta">
+              ${timeStr} · ${e.calories.toFixed(0)} kcal ·
+              P ${e.protein.toFixed(1)}g ·
+              C ${e.carbs.toFixed(1)}g ·
+              F ${e.fat.toFixed(1)}g
+            </div>
+          </li>
+        `;
+      }).join("");
+    }
+
+    async function loadDay(day) {
+      errorEl.textContent = "";
+      try {
+        const res = await fetch(`/api/day?day=${encodeURIComponent(day)}`);
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to load day");
+        }
+        const data = await res.json();
+        renderStats(data.stats);
+        renderEntries(data.entries);
+      } catch (err) {
+        errorEl.textContent = err.message;
+      }
+    }
+
+    const todayIso = new Date().toISOString().slice(0, 10);
+    dayInput.value = todayIso;
+    dayInput.addEventListener("change", () => {
+      if (!dayInput.value) return;
+      loadDay(dayInput.value);
+    });
+
+    loadDay(todayIso);
+  </script>
+</body>
+</html>

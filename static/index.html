@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Calorie Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 1rem;
+      max-width: 600px;
+      margin-inline: auto;
+      background: #f5f5f5;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+    .card {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+    .stat {
+      background: #fafafa;
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.9rem;
+    }
+    .stat-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      opacity: 0.7;
+    }
+    .stat-value {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    textarea {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+      font-size: 1rem;
+      resize: vertical;
+      min-height: 60px;
+    }
+    button {
+      font-family: inherit;
+    }
+    .primary-btn {
+      width: 100%;
+      margin-top: 0.5rem;
+      padding: 0.75rem;
+      border-radius: 999px;
+      border: none;
+      font-size: 1rem;
+      font-weight: 600;
+      background: #111827;
+      color: white;
+      cursor: pointer;
+    }
+    .primary-btn:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      color: #6b7280;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .icon-btn:hover {
+      background: #f3f4f6;
+    }
+    .entries-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .entry {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+    .entry:last-child {
+      border-bottom: none;
+    }
+    .entry-content {
+      flex: 1;
+    }
+    .entry-main {
+      font-size: 0.95rem;
+      margin-bottom: 0.25rem;
+    }
+    .entry-meta {
+      font-size: 0.8rem;
+      opacity: 0.75;
+    }
+    .entry-empty {
+      display: block;
+      text-align: center;
+      opacity: 0.7;
+    }
+    .error {
+      color: #b91c1c;
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+    }
+    .small {
+      font-size: 0.75rem;
+      opacity: 0.7;
+      text-align: center;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+    <h1 style="margin:0;">Calorie Tracker</h1>
+    <nav style="display:flex;gap:0.5rem;font-size:0.95rem;">
+      <a href="/static/index.html">Today</a>
+      <a href="/static/history.html">History</a>
+      <a href="/static/notes.html">Notes</a>
+    </nav>
+  </header>
+
+  <div class="card">
+    <h2>Today</h2>
+    <div class="stats-grid" id="today-stats"></div>
+  </div>
+
+  <div class="card">
+    <h2>Last 7 Days (avg on logged days)</h2>
+    <div class="stats-grid" id="last7-stats"></div>
+  </div>
+
+  <div class="card">
+    <h2>Add food</h2>
+    <textarea id="food-input" placeholder="e.g. 2 slices of toast with butter, 1 latte with skimmed milk"></textarea>
+    <button id="add-btn" class="primary-btn">Add</button>
+    <div class="error" id="error"></div>
+    <div class="small">Entries are estimated using an AI model. Numbers are approximate. Add shorthand notes on the Notes page to auto-expand phrases like “protein shake”.</div>
+  </div>
+
+  <div class="card">
+    <h2>Today’s entries</h2>
+    <ul class="entries-list" id="entries"></ul>
+  </div>
+
+  <script>
+    const todayStatsEl = document.getElementById("today-stats");
+    const last7StatsEl = document.getElementById("last7-stats");
+    const entriesEl = document.getElementById("entries");
+    const foodInput = document.getElementById("food-input");
+    const addBtn = document.getElementById("add-btn");
+    const errorEl = document.getElementById("error");
+
+    function renderStats(container, stats, { isAverage = false } = {}) {
+      const labelSuffix = isAverage ? " avg" : "";
+      container.innerHTML = `
+        <div class="stat">
+          <div class="stat-title">Calories</div>
+          <div class="stat-value">${stats.total_calories.toFixed(0)} kcal${labelSuffix}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-title">Protein</div>
+          <div class="stat-value">${stats.total_protein.toFixed(1)} g${labelSuffix}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-title">Carbs</div>
+          <div class="stat-value">${stats.total_carbs.toFixed(1)} g${labelSuffix}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-title">Fat</div>
+          <div class="stat-value">${stats.total_fat.toFixed(1)} g${labelSuffix}</div>
+        </div>
+      `;
+    }
+
+    function renderEntries(entries) {
+      if (!entries.length) {
+        entriesEl.innerHTML = '<li class="entry entry-empty">No entries yet today.</li>';
+        return;
+      }
+      entriesEl.innerHTML = entries.map(e => {
+        const dt = new Date(e.ts);
+        const timeStr = dt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+        return `
+          <li class="entry">
+            <div class="entry-content">
+              <div class="entry-main">${e.description}</div>
+              <div class="entry-meta">
+                ${timeStr} · ${e.calories.toFixed(0)} kcal ·
+                P ${e.protein.toFixed(1)}g ·
+                C ${e.carbs.toFixed(1)}g ·
+                F ${e.fat.toFixed(1)}g
+              </div>
+            </div>
+            <button class="icon-btn" data-delete-id="${e.id}" aria-label="Delete entry">✕</button>
+          </li>
+        `;
+      }).join("");
+    }
+
+    function updateUI(data) {
+      renderStats(todayStatsEl, data.today_stats);
+      renderStats(last7StatsEl, data.last7_stats, { isAverage: true });
+      renderEntries(data.today_entries);
+    }
+
+    async function loadDashboard() {
+      try {
+        const res = await fetch("/api/dashboard");
+        if (!res.ok) throw new Error("Failed to load dashboard");
+        const data = await res.json();
+        updateUI(data);
+      } catch (err) {
+        errorEl.textContent = err.message;
+      }
+    }
+
+    async function addEntry() {
+      const text = foodInput.value.trim();
+      if (!text) {
+        errorEl.textContent = "Enter something first.";
+        return;
+      }
+
+      errorEl.textContent = "";
+      addBtn.disabled = true;
+      addBtn.textContent = "Adding...";
+
+      try {
+        const res = await fetch("/api/entries", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to add entry");
+        }
+        const data = await res.json();
+        foodInput.value = "";
+        updateUI(data);
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        addBtn.disabled = false;
+        addBtn.textContent = "Add";
+      }
+    }
+
+    async function deleteEntry(id) {
+      errorEl.textContent = "";
+      try {
+        const res = await fetch(`/api/entries/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to delete entry");
+        }
+        const data = await res.json();
+        updateUI(data);
+      } catch (err) {
+        errorEl.textContent = err.message;
+      }
+    }
+
+    addBtn.addEventListener("click", addEntry);
+    foodInput.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        addEntry();
+      }
+    });
+    entriesEl.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-delete-id]");
+      if (!btn) return;
+      deleteEntry(btn.getAttribute("data-delete-id"));
+    });
+
+    loadDashboard();
+  </script>
+</body>
+</html>

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Calorie Tracker - Notes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 1rem;
+      max-width: 720px;
+      margin-inline: auto;
+      background: #f5f5f5;
+    }
+    h1 {
+      margin: 0;
+    }
+    .card {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    }
+    .form-grid {
+      display: grid;
+      gap: 0.75rem;
+    }
+    input[type="text"],
+    textarea {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+      font-size: 1rem;
+      resize: vertical;
+      min-height: 60px;
+      font-family: inherit;
+    }
+    textarea {
+      min-height: 90px;
+    }
+    label {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    button {
+      font-family: inherit;
+    }
+    .primary-btn {
+      width: 100%;
+      margin-top: 0.5rem;
+      padding: 0.75rem;
+      border-radius: 999px;
+      border: none;
+      font-size: 1rem;
+      font-weight: 600;
+      background: #111827;
+      color: white;
+      cursor: pointer;
+    }
+    .primary-btn:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    .ghost-btn {
+      padding: 0.35rem 0.65rem;
+      border-radius: 10px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .ghost-btn:hover {
+      background: #f3f4f6;
+    }
+    .danger {
+      color: #b91c1c;
+      border-color: #fca5a5;
+    }
+    .notes-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .note-item {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #eee;
+    }
+    .note-item:last-child {
+      border-bottom: none;
+    }
+    .note-title {
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+    .note-content {
+      white-space: pre-wrap;
+    }
+    .small {
+      font-size: 0.85rem;
+      opacity: 0.75;
+      margin-top: 0.25rem;
+    }
+    .error {
+      color: #b91c1c;
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
+    <h1>Notes</h1>
+    <nav style="display:flex;gap:0.5rem;font-size:0.95rem;">
+      <a href="/static/index.html">Today</a>
+      <a href="/static/history.html">History</a>
+      <a href="/static/notes.html">Notes</a>
+    </nav>
+  </header>
+
+  <div class="card">
+    <h2>Shorthand notes</h2>
+    <p class="small">Add a shorthand and the detailed description it should map to. Example: title “protein shake”, content “400ml milk, 35g protein powder, 5g cocoa”. Notes are sent to the nutrition model with each entry so it can interpret them (even with small typos). Click a saved note to edit or delete it.</p>
+    <div class="form-grid">
+      <div>
+        <label for="note-title">Title</label>
+        <input id="note-title" type="text" placeholder="protein shake" />
+      </div>
+      <div>
+        <label for="note-content">Content</label>
+        <textarea id="note-content" placeholder="400ml milk, 35g protein powder, 5g cocoa"></textarea>
+      </div>
+      <button id="save-btn" class="primary-btn">Save note</button>
+      <div class="error" id="error"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Saved notes</h2>
+    <ul class="notes-list" id="notes"></ul>
+  </div>
+
+  <script>
+    const notesEl = document.getElementById("notes");
+    const titleInput = document.getElementById("note-title");
+    const contentInput = document.getElementById("note-content");
+    const saveBtn = document.getElementById("save-btn");
+    const errorEl = document.getElementById("error");
+
+    let editingId = null;
+
+    function renderNotes(notes) {
+      if (!notes.length) {
+        notesEl.innerHTML = '<li class="note-item small">No notes yet.</li>';
+        return;
+      }
+      notesEl.innerHTML = notes.map(n => `
+        <li class="note-item">
+          <div class="note-title">${n.title}</div>
+          <div class="note-content">${n.content}</div>
+          <div class="small">Updated ${new Date(n.created_at).toLocaleString()}</div>
+          <div style="margin-top:0.35rem; display:flex; gap:0.4rem;">
+            <button class="ghost-btn" data-edit-id="${n.id}" data-title="${encodeURIComponent(n.title)}" data-content="${encodeURIComponent(n.content)}">Edit</button>
+            <button class="ghost-btn danger" data-delete-id="${n.id}">Delete</button>
+          </div>
+        </li>
+      `).join("");
+    }
+
+    async function loadNotes() {
+      errorEl.textContent = "";
+      try {
+        const res = await fetch("/api/notes");
+        if (!res.ok) throw new Error("Failed to load notes");
+        const data = await res.json();
+        renderNotes(data);
+      } catch (err) {
+        errorEl.textContent = err.message;
+      }
+    }
+
+    async function saveNote() {
+      const title = titleInput.value.trim();
+      const content = contentInput.value.trim();
+      if (!title || !content) {
+        errorEl.textContent = "Title and content are required.";
+        return;
+      }
+      errorEl.textContent = "";
+      saveBtn.disabled = true;
+      saveBtn.textContent = editingId ? "Updating..." : "Saving...";
+      try {
+        const method = editingId ? "PUT" : "POST";
+        const url = editingId ? `/api/notes/${editingId}` : "/api/notes";
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, content }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to save note");
+        }
+        const data = await res.json();
+        titleInput.value = "";
+        contentInput.value = "";
+        editingId = null;
+        saveBtn.textContent = "Save note";
+        renderNotes(data);
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = editingId ? "Update note" : "Save note";
+      }
+    }
+
+    async function deleteNote(id) {
+      errorEl.textContent = "";
+      saveBtn.disabled = true;
+      try {
+        const res = await fetch(`/api/notes/${id}`, { method: "DELETE" });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to delete note");
+        }
+        const data = await res.json();
+        // If deleting the one currently being edited, reset.
+        if (editingId && Number(editingId) === Number(id)) {
+          editingId = null;
+          titleInput.value = "";
+          contentInput.value = "";
+          saveBtn.textContent = "Save note";
+        }
+        renderNotes(data);
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        saveBtn.disabled = false;
+      }
+    }
+
+    saveBtn.addEventListener("click", saveNote);
+    titleInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        saveNote();
+      }
+    });
+
+    notesEl.addEventListener("click", (e) => {
+      const editBtn = e.target.closest("[data-edit-id]");
+      const deleteBtn = e.target.closest("[data-delete-id]");
+      if (editBtn) {
+        const id = editBtn.getAttribute("data-edit-id");
+        const title = decodeURIComponent(editBtn.getAttribute("data-title"));
+        const content = decodeURIComponent(editBtn.getAttribute("data-content"));
+        editingId = id;
+        titleInput.value = title;
+        contentInput.value = content;
+        saveBtn.textContent = "Update note";
+        return;
+      }
+      if (deleteBtn) {
+        const id = deleteBtn.getAttribute("data-delete-id");
+        deleteNote(id);
+      }
+    });
+
+    loadNotes();
+  </script>
+</body>
+</html>
