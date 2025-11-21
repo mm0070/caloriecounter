@@ -1,8 +1,9 @@
 import os
 import json
+import base64
 from datetime import datetime, timedelta, timezone, date
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
@@ -212,7 +213,7 @@ def note_to_out(note: Note) -> NoteOut:
     )
 
 
-def call_nutrition_model(text: str, notes: list[Note]) -> dict:
+def notes_to_block(notes: list[Note]) -> str:
     note_lines = []
     for note in notes:
         title = note.title.strip()
@@ -221,7 +222,11 @@ def call_nutrition_model(text: str, notes: list[Note]) -> dict:
             continue
         note_lines.append(f"- {title}: {content}")
 
-    note_block = "\n".join(note_lines) if note_lines else "None provided."
+    return "\n".join(note_lines) if note_lines else "None provided."
+
+
+def call_nutrition_model(text: str, notes: list[Note]) -> dict:
+    note_block = notes_to_block(notes)
 
     system_prompt = f"""
 You are a nutrition assistant.
@@ -250,6 +255,69 @@ If the user mentions items that look like these shorthands (even with minor typo
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": text},
+        ],
+    )
+
+    content = response.choices[0].message.content
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Model returned invalid JSON")
+
+    for key in ["calories", "protein_g", "carbs_g", "fat_g"]:
+        if key not in data:
+            raise HTTPException(status_code=500, detail=f"Missing key in model response: {key}")
+
+    return data
+
+
+def call_nutrition_model_image(image_bytes: bytes, content_type: str, notes: list[Note]) -> dict:
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    base64_image = base64.b64encode(image_bytes).decode("utf-8")
+    data_url = f"data:{content_type};base64,{base64_image}"
+
+    note_block = notes_to_block(notes)
+
+    system_prompt = f"""
+You are a nutrition assistant.
+
+Given a photo of everything a person ate or drank, estimate:
+- total calories (kcal)
+- total protein (g)
+- total carbohydrates (g)
+- total fat (g)
+
+Also provide a short human-readable description of what you see.
+
+Return ONLY a JSON object with these keys:
+- "description"
+- "calories"
+- "protein_g"
+- "carbs_g"
+- "fat_g"
+
+All values must be numbers for macros, no units in the values. Description is free text.
+If something is unclear, make a reasonable estimate.
+If the items resemble these shorthands (even with minor typos), use the provided detail:
+{note_block}
+""".strip()
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Estimate nutrition for this meal photo. If multiple foods, sum totals."},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": data_url, "detail": "high"},
+                    },
+                ],
+            },
         ],
     )
 
@@ -322,6 +390,39 @@ async def add_entry(payload: AddEntryRequest, request: Request):
     entry = Entry(
         ts=now_utc,
         description=original_text,
+        calories=float(model_data["calories"]),
+        protein=float(model_data["protein_g"]),
+        carbs=float(model_data["carbs_g"]),
+        fat=float(model_data["fat_g"]),
+        raw_response=json.dumps(model_data),
+    )
+
+    db.add(entry)
+    db.commit()
+
+    return get_dashboard(db)
+
+
+@app.post("/api/entries/photo", response_model=DashboardOut)
+async def add_entry_photo(file: UploadFile = File(...)):
+    if not file:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Empty image")
+
+    db = next(get_db())
+    notes = db.query(Note).all()
+    model_data = call_nutrition_model_image(image_bytes, file.content_type, notes)
+
+    now_utc = datetime.now(timezone.utc)
+    description = model_data.get("description") or "Photo entry"
+    entry = Entry(
+        ts=now_utc,
+        description=description,
         calories=float(model_data["calories"]),
         protein=float(model_data["protein_g"]),
         carbs=float(model_data["carbs_g"]),

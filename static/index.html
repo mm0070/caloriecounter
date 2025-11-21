@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Calorie Tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-1f2bC4dQwDFiXBJgp7wa9u0edPFpKnz03Wx/89ZbduCMsZ/HXXIQK5vCk1vZ1tcHTul3e8DqRLH0PHJrL6R1g==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <style>
     body {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -16,6 +17,22 @@
     h1 {
       text-align: center;
       margin-bottom: 1rem;
+    }
+    .nav-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.45rem 0.75rem;
+      border-radius: 999px;
+      text-decoration: none;
+      background: #111827;
+      color: #fff;
+      border: 1px solid #111827;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+    }
+    .nav-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.12);
     }
     .card {
       background: #ffffff;
@@ -87,6 +104,14 @@
     .icon-btn:hover {
       background: #f3f4f6;
     }
+    .file-input {
+      width: 100%;
+      padding: 0.5rem;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 0.95rem;
+      background: #fff;
+    }
     .entries-list {
       list-style: none;
       padding: 0;
@@ -133,11 +158,11 @@
 </head>
 <body>
   <header style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
-    <h1 style="margin:0;">Calorie Tracker</h1>
+    <h1 style="margin:0;display:flex;align-items:center;gap:0.4rem;"><i class="fa-solid fa-fire-burner"></i> Calorie Tracker</h1>
     <nav style="display:flex;gap:0.5rem;font-size:0.95rem;">
-      <a href="/static/index.html">Today</a>
-      <a href="/static/history.html">History</a>
-      <a href="/static/notes.html">Notes</a>
+      <a href="/static/index.html" class="nav-btn"><i class="fa-solid fa-bolt"></i> Today</a>
+      <a href="/static/history.html" class="nav-btn"><i class="fa-solid fa-clock-rotate-left"></i> History</a>
+      <a href="/static/notes.html" class="nav-btn"><i class="fa-solid fa-note-sticky"></i> Notes</a>
     </nav>
   </header>
 
@@ -147,7 +172,7 @@
   </div>
 
   <div class="card">
-    <h2>Last 7 Days (avg on logged days)</h2>
+    <h2>Last 7 Days</h2>
     <div class="stats-grid" id="last7-stats"></div>
   </div>
 
@@ -156,7 +181,13 @@
     <textarea id="food-input" placeholder="e.g. 2 slices of toast with butter, 1 latte with skimmed milk"></textarea>
     <button id="add-btn" class="primary-btn">Add</button>
     <div class="error" id="error"></div>
-    <div class="small">Entries are estimated using an AI model. Numbers are approximate. Add shorthand notes on the Notes page to auto-expand phrases like “protein shake”.</div>
+  </div>
+
+  <div class="card">
+    <h2>Add from photo</h2>
+    <input type="file" id="photo-input" class="file-input" accept="image/*" capture="environment" />
+    <button id="upload-btn" class="primary-btn">Upload photo</button>
+    <div class="small" style="margin-top:0.35rem;">We’ll send the image to the model along with your notes to estimate macros.</div>
   </div>
 
   <div class="card">
@@ -170,6 +201,8 @@
     const entriesEl = document.getElementById("entries");
     const foodInput = document.getElementById("food-input");
     const addBtn = document.getElementById("add-btn");
+    const photoInput = document.getElementById("photo-input");
+    const uploadBtn = document.getElementById("upload-btn");
     const errorEl = document.getElementById("error");
 
     function renderStats(container, stats, { isAverage = false } = {}) {
@@ -268,6 +301,38 @@
       }
     }
 
+    async function uploadPhoto() {
+      errorEl.textContent = "";
+      const file = photoInput.files?.[0];
+      if (!file) {
+        errorEl.textContent = "Pick a photo first.";
+        return;
+      }
+
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = "Uploading...";
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/api/entries/photo", {
+          method: "POST",
+          body: formData,
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to upload photo");
+        }
+        const data = await res.json();
+        photoInput.value = "";
+        updateUI(data);
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = "Upload photo";
+      }
+    }
+
     async function deleteEntry(id) {
       errorEl.textContent = "";
       try {
@@ -291,6 +356,7 @@
         addEntry();
       }
     });
+    uploadBtn.addEventListener("click", uploadPhoto);
     entriesEl.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-delete-id]");
       if (!btn) return;
