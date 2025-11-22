@@ -3,7 +3,7 @@ import json
 import base64
 from datetime import datetime, timedelta, timezone, date
 
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
@@ -74,6 +74,7 @@ ensure_alcohol_units_column()
 
 class AddEntryRequest(BaseModel):
     text: str
+    ts: datetime | None = None
 
 
 class UpdateEntryRequest(BaseModel):
@@ -120,6 +121,7 @@ class StatsOut(BaseModel):
 class DashboardOut(BaseModel):
     today_stats: StatsOut
     last7_stats: StatsOut
+    last30_alcohol_units: float
     today_entries: list[EntryOut]
 
 
@@ -127,6 +129,15 @@ class DayOut(BaseModel):
     date: date
     stats: StatsOut
     entries: list[EntryOut]
+
+
+class CalendarDayOut(BaseModel):
+    date: date
+    total_calories: float
+    total_protein: float
+    total_carbs: float
+    total_fat: float
+    total_alcohol_units: float
 
 
 # ---------- Helpers ----------
@@ -161,6 +172,15 @@ def get_date_range(day: date):
 def get_last7_range():
     today = date.today()
     start = datetime.combine(today - timedelta(days=6), datetime.min.time())
+    end = datetime.combine(today + timedelta(days=1), datetime.min.time())
+    start_utc = start.astimezone(timezone.utc) if start.tzinfo else start.replace(tzinfo=timezone.utc)
+    end_utc = end.astimezone(timezone.utc) if end.tzinfo else end.replace(tzinfo=timezone.utc)
+    return start_utc, end_utc
+
+
+def get_last30_range():
+    today = date.today()
+    start = datetime.combine(today - timedelta(days=29), datetime.min.time())
     end = datetime.combine(today + timedelta(days=1), datetime.min.time())
     start_utc = start.astimezone(timezone.utc) if start.tzinfo else start.replace(tzinfo=timezone.utc)
     end_utc = end.astimezone(timezone.utc) if end.tzinfo else end.replace(tzinfo=timezone.utc)
@@ -376,9 +396,19 @@ If the items resemble these shorthands (even with minor typos), use the provided
 def get_dashboard(db: Session) -> DashboardOut:
     today_start, today_end = get_today_range()
     last7_start, last7_end = get_last7_range()
+    last30_start, last30_end = get_last30_range()
 
     today_stats = aggregate_stats(db, today_start, today_end)
-    last7_stats = aggregate_stats(db, last7_start, last7_end)
+    last7_avg = average_stats_on_logged_days(db, last7_start, last7_end)
+    last7_total = aggregate_stats(db, last7_start, last7_end)
+    last7_stats = StatsOut(
+        total_calories=last7_avg.total_calories,
+        total_protein=last7_avg.total_protein,
+        total_carbs=last7_avg.total_carbs,
+        total_fat=last7_avg.total_fat,
+        total_alcohol_units=last7_total.total_alcohol_units,
+    )
+    last30_stats = aggregate_stats(db, last30_start, last30_end)
 
     today_entries = (
         db.query(Entry)
@@ -404,6 +434,7 @@ def get_dashboard(db: Session) -> DashboardOut:
     return DashboardOut(
         today_stats=today_stats,
         last7_stats=last7_stats,
+        last30_alcohol_units=last30_stats.total_alcohol_units,
         today_entries=entries_out,
     )
 
@@ -434,6 +465,27 @@ def get_day_data(db: Session, target_date: date) -> DayOut:
     return DayOut(date=target_date, stats=stats, entries=entries_out)
 
 
+def get_month_range(target_month: str | None = None):
+    today = date.today()
+    if target_month:
+        try:
+            year, month = map(int, target_month.split("-"))
+            start_date = date(year, month, 1)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid month format. Use YYYY-MM.")
+    else:
+        start_date = date(today.year, today.month, 1)
+    # compute first of next month
+    if start_date.month == 12:
+        next_month = date(start_date.year + 1, 1, 1)
+    else:
+        next_month = date(start_date.year, start_date.month + 1, 1)
+
+    start_dt = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+    end_dt = datetime.combine(next_month, datetime.min.time()).replace(tzinfo=timezone.utc)
+    return start_date, start_dt, end_dt
+
+
 # ---------- Routes ----------
 
 @app.get("/", response_class=HTMLResponse)
@@ -452,9 +504,15 @@ async def add_entry(payload: AddEntryRequest, request: Request):
     original_text = payload.text.strip()
     model_data = call_nutrition_model(original_text, notes)
 
-    now_utc = datetime.now(timezone.utc)
+    if payload.ts:
+        entry_ts = payload.ts
+        if entry_ts.tzinfo is None:
+            entry_ts = entry_ts.replace(tzinfo=timezone.utc)
+    else:
+        entry_ts = datetime.now(timezone.utc)
+
     entry = Entry(
-        ts=now_utc,
+        ts=entry_ts,
         description=original_text,
         calories=float(model_data["calories"]),
         protein=float(model_data["protein_g"]),
@@ -471,7 +529,7 @@ async def add_entry(payload: AddEntryRequest, request: Request):
 
 
 @app.post("/api/entries/photo", response_model=DashboardOut)
-async def add_entry_photo(file: UploadFile = File(...)):
+async def add_entry_photo(file: UploadFile = File(...), ts: datetime | None = Form(None)):
     if not file:
         raise HTTPException(status_code=400, detail="No file uploaded")
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -485,10 +543,16 @@ async def add_entry_photo(file: UploadFile = File(...)):
     notes = db.query(Note).all()
     model_data = call_nutrition_model_image(image_bytes, file.content_type, notes)
 
-    now_utc = datetime.now(timezone.utc)
+    if ts:
+        entry_ts = ts
+        if entry_ts.tzinfo is None:
+            entry_ts = entry_ts.replace(tzinfo=timezone.utc)
+    else:
+        entry_ts = datetime.now(timezone.utc)
+
     description = model_data.get("description") or "Photo entry"
     entry = Entry(
-        ts=now_utc,
+        ts=entry_ts,
         description=description,
         calories=float(model_data["calories"]),
         protein=float(model_data["protein_g"]),
@@ -595,6 +659,37 @@ async def day_view(day: str | None = None):
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
     return get_day_data(db, target_date)
+
+
+@app.get("/api/calendar", response_model=list[CalendarDayOut])
+async def calendar(month: str | None = None):
+    db = next(get_db())
+    first_day, start_dt, end_dt = get_month_range(month)
+    rows = (
+        db.query(
+            func.date(Entry.ts),
+            func.coalesce(func.sum(Entry.calories), 0),
+            func.coalesce(func.sum(Entry.protein), 0),
+            func.coalesce(func.sum(Entry.carbs), 0),
+            func.coalesce(func.sum(Entry.fat), 0),
+            func.coalesce(func.sum(Entry.alcohol_units), 0),
+        )
+        .filter(Entry.ts >= start_dt, Entry.ts < end_dt)
+        .group_by(func.date(Entry.ts))
+        .all()
+    )
+
+    return [
+        CalendarDayOut(
+            date=date.fromisoformat(row[0]),
+            total_calories=float(row[1]),
+            total_protein=float(row[2]),
+            total_carbs=float(row[3]),
+            total_fat=float(row[4]),
+            total_alcohol_units=float(row[5]),
+        )
+        for row in rows
+    ]
 
 
 @app.get("/api/notes", response_model=list[NoteOut])

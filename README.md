@@ -19,10 +19,11 @@ uvicorn app.main:app --reload
 Then open `http://localhost:8000/static/index.html`.
 
 ## Endpoints (high level)
-- `POST /api/entries` — add entry (uses notes as context for the model)
-- `POST /api/entries/photo` — add entry from an uploaded image
-- `GET /api/dashboard` — today + last-7-day totals
+- `POST /api/entries` — add entry (uses notes as context for the model); optional `ts` ISO timestamp to backdate
+- `POST /api/entries/photo` — add entry from an uploaded image (supports optional `ts` form field to backdate)
+- `GET /api/dashboard` — today + last-7-day averages (alcohol is total), 30-day alcohol total
 - `GET /api/day?day=YYYY-MM-DD` — stats/entries for a specific date
+- `GET /api/calendar?month=YYYY-MM` — per-day totals for a month (for calendar view)
 - `PUT /api/entries/{id}` — update an entry’s description/macros/timestamp
 - `DELETE /api/entries/{id}` — remove an entry
 - `GET/POST/PUT/DELETE /api/notes` — manage shorthand notes

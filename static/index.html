@@ -72,6 +72,29 @@
       resize: vertical;
       min-height: 60px;
     }
+    input[type="date"],
+    input[type="time"] {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      padding: 0.45rem 0.5rem;
+      font-size: 1rem;
+      box-sizing: border-box;
+      font-family: inherit;
+    }
+    .input-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.6rem;
+      margin-top: 0.5rem;
+      align-items: end;
+    }
+    .field-label {
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-bottom: 0.25rem;
+      display: inline-block;
+    }
     button {
       font-family: inherit;
     }
@@ -174,13 +197,28 @@
   </div>
 
   <div class="card">
-    <h2>Last 7 Days (total)</h2>
+    <h2>Last 7 Days (avg macros, alcohol total)</h2>
     <div class="stats-grid" id="last7-stats"></div>
+  </div>
+
+  <div class="card">
+    <h2>Alcohol (last 30 days)</h2>
+    <div class="stats-grid" id="last30-alcohol"></div>
   </div>
 
   <div class="card">
     <h2>Add food</h2>
     <textarea id="food-input" placeholder="e.g. 2 slices of toast with butter, 1 latte with skimmed milk"></textarea>
+    <div class="input-row">
+      <div>
+        <label class="field-label" for="entry-date">Date</label>
+        <input type="date" id="entry-date" />
+      </div>
+      <div>
+        <label class="field-label" for="entry-time">Time</label>
+        <input type="time" id="entry-time" />
+      </div>
+    </div>
     <button id="add-btn" class="primary-btn">Add</button>
     <div class="error" id="error"></div>
   </div>
@@ -200,35 +238,47 @@
   <script>
     const todayStatsEl = document.getElementById("today-stats");
     const last7StatsEl = document.getElementById("last7-stats");
+    const last30AlcoholEl = document.getElementById("last30-alcohol");
     const entriesEl = document.getElementById("entries");
     const foodInput = document.getElementById("food-input");
+    const dateInput = document.getElementById("entry-date");
+    const timeInput = document.getElementById("entry-time");
     const addBtn = document.getElementById("add-btn");
     const photoInput = document.getElementById("photo-input");
     const uploadBtn = document.getElementById("upload-btn");
     const errorEl = document.getElementById("error");
 
-    function renderStats(container, stats, { isAverage = false } = {}) {
-      const labelSuffix = isAverage ? " avg" : "";
+    function initDateTime() {
+      const now = new Date();
+      dateInput.value = now.toISOString().slice(0, 10);
+      const hours = now.getHours().toString().padStart(2, "0");
+      const minutes = now.getMinutes().toString().padStart(2, "0");
+      timeInput.value = `${hours}:${minutes}`;
+    }
+
+    function renderStats(container, stats, { averageMacros = false, alcoholIsTotal = false } = {}) {
+      const macroSuffix = averageMacros ? " avg" : "";
+      const alcoholSuffix = alcoholIsTotal ? " total" : macroSuffix;
       container.innerHTML = `
         <div class="stat">
           <div class="stat-title">Calories</div>
-          <div class="stat-value">${stats.total_calories.toFixed(0)} kcal${labelSuffix}</div>
+          <div class="stat-value">${stats.total_calories.toFixed(0)} kcal${macroSuffix}</div>
         </div>
         <div class="stat">
           <div class="stat-title">Protein</div>
-          <div class="stat-value">${stats.total_protein.toFixed(1)} g${labelSuffix}</div>
+          <div class="stat-value">${stats.total_protein.toFixed(1)} g${macroSuffix}</div>
         </div>
         <div class="stat">
           <div class="stat-title">Carbs</div>
-          <div class="stat-value">${stats.total_carbs.toFixed(1)} g${labelSuffix}</div>
+          <div class="stat-value">${stats.total_carbs.toFixed(1)} g${macroSuffix}</div>
         </div>
         <div class="stat">
           <div class="stat-title">Fat</div>
-          <div class="stat-value">${stats.total_fat.toFixed(1)} g${labelSuffix}</div>
+          <div class="stat-value">${stats.total_fat.toFixed(1)} g${macroSuffix}</div>
         </div>
         <div class="stat">
           <div class="stat-title">Alcohol</div>
-          <div class="stat-value">${stats.total_alcohol_units.toFixed(1)} units${labelSuffix}</div>
+          <div class="stat-value">${stats.total_alcohol_units.toFixed(1)} units${alcoholSuffix}</div>
         </div>
       `;
     }
@@ -261,7 +311,13 @@
 
     function updateUI(data) {
       renderStats(todayStatsEl, data.today_stats);
-      renderStats(last7StatsEl, data.last7_stats, { isAverage: false });
+      renderStats(last7StatsEl, data.last7_stats, { averageMacros: true, alcoholIsTotal: true });
+      last30AlcoholEl.innerHTML = `
+        <div class="stat">
+          <div class="stat-title">Alcohol units</div>
+          <div class="stat-value">${data.last30_alcohol_units.toFixed(1)} units</div>
+        </div>
+      `;
       renderEntries(data.today_entries);
     }
 
@@ -282,6 +338,17 @@
         errorEl.textContent = "Enter something first.";
         return;
       }
+      const dateVal = dateInput.value;
+      const timeVal = timeInput.value;
+      if (!dateVal || !timeVal) {
+        errorEl.textContent = "Pick a date and time.";
+        return;
+      }
+      const ts = new Date(`${dateVal}T${timeVal}`);
+      if (Number.isNaN(ts.getTime())) {
+        errorEl.textContent = "Invalid date or time.";
+        return;
+      }
 
       errorEl.textContent = "";
       addBtn.disabled = true;
@@ -291,7 +358,7 @@
         const res = await fetch("/api/entries", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({ text, ts: ts.toISOString() }),
         });
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
@@ -315,12 +382,24 @@
         errorEl.textContent = "Pick a photo first.";
         return;
       }
+      const dateVal = dateInput.value;
+      const timeVal = timeInput.value;
+      if (!dateVal || !timeVal) {
+        errorEl.textContent = "Pick a date and time.";
+        return;
+      }
+      const ts = new Date(`${dateVal}T${timeVal}`);
+      if (Number.isNaN(ts.getTime())) {
+        errorEl.textContent = "Invalid date or time.";
+        return;
+      }
 
       uploadBtn.disabled = true;
       uploadBtn.textContent = "Uploading...";
       try {
         const formData = new FormData();
         formData.append("file", file);
+        formData.append("ts", ts.toISOString());
         const res = await fetch("/api/entries/photo", {
           method: "POST",
           body: formData,
@@ -370,6 +449,7 @@
       deleteEntry(btn.getAttribute("data-delete-id"));
     });
 
+    initDateTime();
     loadDashboard();
   </script>
 </body>

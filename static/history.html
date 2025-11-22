@@ -37,6 +37,60 @@
       padding: 0.5rem 0.75rem;
       font-size: 0.9rem;
     }
+    .calendar {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 0.4rem;
+      margin-top: 0.75rem;
+    }
+    .day-cell {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 0.35rem 0.4rem;
+      min-height: 70px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .day-label {
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.4rem;
+      border-radius: 999px;
+      width: fit-content;
+    }
+    .badge.alcohol {
+      background: rgba(249, 115, 22, 0.14);
+      color: #c2410c;
+    }
+    .badge.protein {
+      background: rgba(34, 197, 94, 0.14);
+      color: #166534;
+    }
+    .badge.calories {
+      background: rgba(248, 113, 113, 0.16);
+      color: #b91c1c;
+    }
+    .legend {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-top: 0.25rem;
+      font-size: 0.85rem;
+    }
+    .calendar-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
     .stat-title {
       font-size: 0.75rem;
       text-transform: uppercase;
@@ -180,6 +234,19 @@
   </div>
 
   <div class="card">
+    <div class="calendar-header">
+      <h2 style="margin:0;">Monthly view</h2>
+      <input type="month" id="month-input" />
+    </div>
+    <div class="legend">
+      <span class="badge alcohol"><i class="fa-solid fa-wine-bottle"></i> Alcohol</span>
+      <span class="badge protein"><i class="fa-solid fa-dumbbell"></i> Protein ≥ 150g</span>
+      <span class="badge calories"><i class="fa-solid fa-fire"></i> Calories > 2800</span>
+    </div>
+    <div class="calendar" id="calendar"></div>
+  </div>
+
+  <div class="card">
     <h2>Entries</h2>
     <ul class="entries-list" id="entries"></ul>
   </div>
@@ -188,9 +255,12 @@
     const statsEl = document.getElementById("day-stats");
     const entriesEl = document.getElementById("entries");
     const dayInput = document.getElementById("day-input");
+    const monthInput = document.getElementById("month-input");
+    const calendarEl = document.getElementById("calendar");
     const errorEl = document.getElementById("error");
     let currentEntries = [];
     let editingId = null;
+    let calendarData = [];
 
     function formatDateInput(dt) {
       const year = dt.getFullYear();
@@ -320,6 +390,56 @@
       renderEntries(currentEntries);
     }
 
+    function renderCalendar(monthStr) {
+      calendarEl.innerHTML = "";
+      if (!monthStr) return;
+      const [year, month] = monthStr.split("-").map(Number);
+      const firstDay = new Date(year, month - 1, 1);
+      const startWeekday = firstDay.getDay(); // 0 Sun..6 Sat
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const cells = [];
+      for (let i = 0; i < startWeekday; i++) {
+        cells.push('<div></div>');
+      }
+      const dataMap = new Map(calendarData.map(d => [d.date, d]));
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${year}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+        const data = dataMap.get(dateStr);
+        const badges = [];
+        if (data?.total_alcohol_units > 0) {
+          badges.push('<span class="badge alcohol"><i class="fa-solid fa-wine-bottle"></i> Alc</span>');
+        }
+        if ((data?.total_protein || 0) >= 150) {
+          badges.push('<span class="badge protein"><i class="fa-solid fa-dumbbell"></i> Protein</span>');
+        }
+        if ((data?.total_calories || 0) > 2800) {
+          badges.push('<span class="badge calories"><i class="fa-solid fa-fire"></i> 2800+</span>');
+        }
+        cells.push(`
+          <div class="day-cell">
+            <div class="day-label">${day}</div>
+            ${badges.join("")}
+          </div>
+        `);
+      }
+      calendarEl.innerHTML = cells.join("");
+    }
+
+    async function loadCalendar(month) {
+      setError("");
+      try {
+        const res = await fetch(`/api/calendar?month=${encodeURIComponent(month)}`);
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to load calendar");
+        }
+        calendarData = await res.json();
+        renderCalendar(month);
+      } catch (err) {
+        setError(err.message);
+      }
+    }
+
     async function loadDay(day) {
       setError("");
       try {
@@ -362,10 +482,10 @@
       }
 
       const ts = new Date(`${dateVal}T${timeVal}`);
-      if (Number.isNaN(ts.getTime())) {
-        setError("Invalid date or time.");
-        return;
-      }
+    if (Number.isNaN(ts.getTime())) {
+      setError("Invalid date or time.");
+      return;
+    }
 
       const saveBtn = row.querySelector("[data-save-id]");
       if (saveBtn) {
@@ -412,6 +532,14 @@
       loadDay(dayInput.value);
     });
 
+    const now = new Date();
+    const monthStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
+    monthInput.value = monthStr;
+    monthInput.addEventListener("change", () => {
+      if (!monthInput.value) return;
+      loadCalendar(monthInput.value);
+    });
+
     entriesEl.addEventListener("click", (e) => {
       const editBtn = e.target.closest("[data-edit-id]");
       const cancelBtn = e.target.closest("[data-cancel-id]");
@@ -434,6 +562,7 @@
       }
     });
 
+    loadCalendar(monthStr);
     loadDay(todayIso);
   </script>
 </body>
