@@ -167,6 +167,20 @@
     const contentInput = document.getElementById("note-content");
     const saveBtn = document.getElementById("save-btn");
     const errorEl = document.getElementById("error");
+    let hasForcedReload = false;
+
+    function forceFreshLoad(reason) {
+      if (hasForcedReload) return;
+      hasForcedReload = true;
+      location.reload();
+    }
+
+    window.addEventListener("pageshow", (e) => {
+      if (e.persisted) forceFreshLoad("pageshow");
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) forceFreshLoad("visibilitychange");
+    });
 
     let editingId = null;
 

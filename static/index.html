@@ -247,6 +247,20 @@
     const photoInput = document.getElementById("photo-input");
     const uploadBtn = document.getElementById("upload-btn");
     const errorEl = document.getElementById("error");
+    let hasForcedReload = false;
+
+    function forceFreshLoad(reason) {
+      if (hasForcedReload) return;
+      hasForcedReload = true;
+      location.reload();
+    }
+
+    window.addEventListener("pageshow", (e) => {
+      if (e.persisted) forceFreshLoad("pageshow");
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) forceFreshLoad("visibilitychange");
+    });
 
     function initDateTime() {
       // Re-query in case of bfcache/nav returning this page
