@@ -209,7 +209,7 @@
   <div class="card">
     <h2>Add food</h2>
     <textarea id="food-input" placeholder="e.g. 2 slices of toast with butter, 1 latte with skimmed milk"></textarea>
-    <div class="input-row">
+    <div class="input-row" id="entry-datetime-row">
       <div>
         <label class="field-label" for="entry-date">Date</label>
         <input type="date" id="entry-date" />
@@ -241,14 +241,18 @@
     const last30AlcoholEl = document.getElementById("last30-alcohol");
     const entriesEl = document.getElementById("entries");
     const foodInput = document.getElementById("food-input");
-    const dateInput = document.getElementById("entry-date");
-    const timeInput = document.getElementById("entry-time");
+    let dateInput = document.getElementById("entry-date");
+    let timeInput = document.getElementById("entry-time");
     const addBtn = document.getElementById("add-btn");
     const photoInput = document.getElementById("photo-input");
     const uploadBtn = document.getElementById("upload-btn");
     const errorEl = document.getElementById("error");
 
     function initDateTime() {
+      // Re-query in case of bfcache/nav returning this page
+      dateInput = document.getElementById("entry-date");
+      timeInput = document.getElementById("entry-time");
+      if (!dateInput || !timeInput) return;
       const now = new Date();
       dateInput.value = now.toISOString().slice(0, 10);
       const hours = now.getHours().toString().padStart(2, "0");
@@ -450,6 +454,7 @@
     });
 
     initDateTime();
+    window.addEventListener("pageshow", initDateTime);
     loadDashboard();
   </script>
 </body>
