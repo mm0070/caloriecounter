@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import (
-    create_engine, Column, Integer, Float, Text, DateTime, func
+    create_engine, Column, Integer, Float, Text, DateTime, func, text
 )
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
@@ -44,6 +44,7 @@ class Entry(Base):
     protein = Column(Float, nullable=False)
     carbs = Column(Float, nullable=False)
     fat = Column(Float, nullable=False)
+    alcohol_units = Column(Float, nullable=False, default=0)
     raw_response = Column(Text, nullable=True)
 
 
@@ -59,10 +60,30 @@ class Note(Base):
 Base.metadata.create_all(bind=engine)
 
 
+def ensure_alcohol_units_column():
+    with engine.connect() as conn:
+        cols = [row[1] for row in conn.execute(text("PRAGMA table_info(entries)"))]
+        if "alcohol_units" not in cols:
+            conn.execute(text("ALTER TABLE entries ADD COLUMN alcohol_units FLOAT NOT NULL DEFAULT 0"))
+
+
+ensure_alcohol_units_column()
+
+
 # ---------- Schemas ----------
 
 class AddEntryRequest(BaseModel):
     text: str
+
+
+class UpdateEntryRequest(BaseModel):
+    description: str | None = None
+    calories: float | None = None
+    protein: float | None = None
+    carbs: float | None = None
+    fat: float | None = None
+    alcohol_units: float | None = None
+    ts: datetime | None = None
 
 
 class AddNoteRequest(BaseModel):
@@ -78,6 +99,7 @@ class EntryOut(BaseModel):
     protein: float
     carbs: float
     fat: float
+    alcohol_units: float
 
 
 class NoteOut(BaseModel):
@@ -92,6 +114,7 @@ class StatsOut(BaseModel):
     total_protein: float
     total_carbs: float
     total_fat: float
+    total_alcohol_units: float
 
 
 class DashboardOut(BaseModel):
@@ -150,6 +173,7 @@ def empty_stats() -> StatsOut:
         total_protein=0.0,
         total_carbs=0.0,
         total_fat=0.0,
+        total_alcohol_units=0.0,
     )
 
 
@@ -160,6 +184,7 @@ def aggregate_stats(db: Session, start: datetime, end: datetime) -> StatsOut:
             func.coalesce(func.sum(Entry.protein), 0),
             func.coalesce(func.sum(Entry.carbs), 0),
             func.coalesce(func.sum(Entry.fat), 0),
+            func.coalesce(func.sum(Entry.alcohol_units), 0),
         )
         .filter(Entry.ts >= start, Entry.ts < end)
         .one()
@@ -169,6 +194,7 @@ def aggregate_stats(db: Session, start: datetime, end: datetime) -> StatsOut:
         total_protein=float(result[1] or 0),
         total_carbs=float(result[2] or 0),
         total_fat=float(result[3] or 0),
+        total_alcohol_units=float(result[4] or 0),
     )
 
 
@@ -180,6 +206,7 @@ def average_stats_on_logged_days(db: Session, start: datetime, end: datetime) ->
             func.coalesce(func.sum(Entry.protein), 0),
             func.coalesce(func.sum(Entry.carbs), 0),
             func.coalesce(func.sum(Entry.fat), 0),
+            func.coalesce(func.sum(Entry.alcohol_units), 0),
         )
         .filter(Entry.ts >= start, Entry.ts < end)
         .group_by(func.date(Entry.ts))
@@ -195,12 +222,14 @@ def average_stats_on_logged_days(db: Session, start: datetime, end: datetime) ->
     total_protein = sum(float(day[2]) for day in logged_days)
     total_carbs = sum(float(day[3]) for day in logged_days)
     total_fat = sum(float(day[4]) for day in logged_days)
+    total_alcohol = sum(float(day[5]) for day in logged_days)
 
     return StatsOut(
         total_calories=total_calories / day_count,
         total_protein=total_protein / day_count,
         total_carbs=total_carbs / day_count,
         total_fat=total_fat / day_count,
+        total_alcohol_units=total_alcohol / day_count,
     )
 
 
@@ -236,12 +265,16 @@ Given a description of everything a person ate or drank, estimate:
 - total protein (g)
 - total carbohydrates (g)
 - total fat (g)
+- total alcohol units (UK units)
+
+If no alcohol is present, return 0 for alcohol_units.
 
 Return ONLY a JSON object with these keys:
 - "calories"
 - "protein_g"
 - "carbs_g"
 - "fat_g"
+- "alcohol_units"
 
 All values must be numbers, no units in the values.
 If something is unclear, make a reasonable estimate.
@@ -265,7 +298,7 @@ If the user mentions items that look like these shorthands (even with minor typo
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Model returned invalid JSON")
 
-    for key in ["calories", "protein_g", "carbs_g", "fat_g"]:
+    for key in ["calories", "protein_g", "carbs_g", "fat_g", "alcohol_units"]:
         if key not in data:
             raise HTTPException(status_code=500, detail=f"Missing key in model response: {key}")
 
@@ -288,8 +321,11 @@ Given a photo of everything a person ate or drank, estimate:
 - total protein (g)
 - total carbohydrates (g)
 - total fat (g)
+- total alcohol units (UK units)
 
 Also provide a short human-readable description of what you see.
+
+If no alcohol is present, return 0 for alcohol_units.
 
 Return ONLY a JSON object with these keys:
 - "description"
@@ -297,6 +333,7 @@ Return ONLY a JSON object with these keys:
 - "protein_g"
 - "carbs_g"
 - "fat_g"
+- "alcohol_units"
 
 All values must be numbers for macros, no units in the values. Description is free text.
 If something is unclear, make a reasonable estimate.
@@ -329,7 +366,7 @@ If the items resemble these shorthands (even with minor typos), use the provided
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Model returned invalid JSON")
 
-    for key in ["calories", "protein_g", "carbs_g", "fat_g"]:
+    for key in ["calories", "protein_g", "carbs_g", "fat_g", "alcohol_units"]:
         if key not in data:
             raise HTTPException(status_code=500, detail=f"Missing key in model response: {key}")
 
@@ -341,7 +378,7 @@ def get_dashboard(db: Session) -> DashboardOut:
     last7_start, last7_end = get_last7_range()
 
     today_stats = aggregate_stats(db, today_start, today_end)
-    last7_stats = average_stats_on_logged_days(db, last7_start, last7_end)
+    last7_stats = aggregate_stats(db, last7_start, last7_end)
 
     today_entries = (
         db.query(Entry)
@@ -359,6 +396,7 @@ def get_dashboard(db: Session) -> DashboardOut:
             protein=e.protein,
             carbs=e.carbs,
             fat=e.fat,
+            alcohol_units=e.alcohol_units,
         )
         for e in today_entries
     ]
@@ -368,6 +406,32 @@ def get_dashboard(db: Session) -> DashboardOut:
         last7_stats=last7_stats,
         today_entries=entries_out,
     )
+
+
+def get_day_data(db: Session, target_date: date) -> DayOut:
+    start, end = get_date_range(target_date)
+    stats = aggregate_stats(db, start, end)
+    entries = (
+        db.query(Entry)
+        .filter(Entry.ts >= start, Entry.ts < end)
+        .order_by(Entry.ts.desc())
+        .all()
+    )
+    entries_out = [
+        EntryOut(
+            id=e.id,
+            ts=e.ts,
+            description=e.description,
+            calories=e.calories,
+            protein=e.protein,
+            carbs=e.carbs,
+            fat=e.fat,
+            alcohol_units=e.alcohol_units,
+        )
+        for e in entries
+    ]
+
+    return DayOut(date=target_date, stats=stats, entries=entries_out)
 
 
 # ---------- Routes ----------
@@ -396,6 +460,7 @@ async def add_entry(payload: AddEntryRequest, request: Request):
         protein=float(model_data["protein_g"]),
         carbs=float(model_data["carbs_g"]),
         fat=float(model_data["fat_g"]),
+        alcohol_units=float(model_data.get("alcohol_units", 0)),
         raw_response=json.dumps(model_data),
     )
 
@@ -429,6 +494,7 @@ async def add_entry_photo(file: UploadFile = File(...)):
         protein=float(model_data["protein_g"]),
         carbs=float(model_data["carbs_g"]),
         fat=float(model_data["fat_g"]),
+        alcohol_units=float(model_data.get("alcohol_units", 0)),
         raw_response=json.dumps(model_data),
     )
 
@@ -436,6 +502,69 @@ async def add_entry_photo(file: UploadFile = File(...)):
     db.commit()
 
     return get_dashboard(db)
+
+
+@app.put("/api/entries/{entry_id}", response_model=EntryOut)
+async def update_entry(entry_id: int, payload: UpdateEntryRequest):
+    if all(
+        value is None
+        for value in [
+            payload.description,
+            payload.calories,
+            payload.protein,
+            payload.carbs,
+            payload.fat,
+            payload.alcohol_units,
+            payload.ts,
+        ]
+    ):
+        raise HTTPException(status_code=400, detail="Provide at least one field to update")
+
+    db = next(get_db())
+    entry = db.query(Entry).filter(Entry.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    if payload.description is not None:
+        desc = payload.description.strip()
+        if not desc:
+            raise HTTPException(status_code=400, detail="Description cannot be empty")
+        entry.description = desc
+
+    def set_float(value: float | None, attr: str):
+        if value is None:
+            return
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"{attr.capitalize()} must be a number")
+        setattr(entry, attr, number)
+
+    set_float(payload.calories, "calories")
+    set_float(payload.protein, "protein")
+    set_float(payload.carbs, "carbs")
+    set_float(payload.fat, "fat")
+    set_float(payload.alcohol_units, "alcohol_units")
+
+    if payload.ts is not None:
+        new_ts = payload.ts
+        if new_ts.tzinfo is None:
+            new_ts = new_ts.replace(tzinfo=timezone.utc)
+        entry.ts = new_ts
+
+    db.commit()
+    db.refresh(entry)
+
+    return EntryOut(
+        id=entry.id,
+        ts=entry.ts,
+        description=entry.description,
+        calories=entry.calories,
+        protein=entry.protein,
+        carbs=entry.carbs,
+        fat=entry.fat,
+        alcohol_units=entry.alcohol_units,
+    )
 
 
 @app.delete("/api/entries/{entry_id}", response_model=DashboardOut)
@@ -465,28 +594,7 @@ async def day_view(day: str | None = None):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
-    start, end = get_date_range(target_date)
-    stats = aggregate_stats(db, start, end)
-    entries = (
-        db.query(Entry)
-        .filter(Entry.ts >= start, Entry.ts < end)
-        .order_by(Entry.ts.desc())
-        .all()
-    )
-    entries_out = [
-        EntryOut(
-            id=e.id,
-            ts=e.ts,
-            description=e.description,
-            calories=e.calories,
-            protein=e.protein,
-            carbs=e.carbs,
-            fat=e.fat,
-        )
-        for e in entries
-    ]
-
-    return DayOut(date=target_date, stats=stats, entries=entries_out)
+    return get_day_data(db, target_date)
 
 
 @app.get("/api/notes", response_model=list[NoteOut])

@@ -45,7 +45,7 @@
     }
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       gap: 0.75rem;
     }
     .stat {
@@ -174,7 +174,7 @@
   </div>
 
   <div class="card">
-    <h2>Last 7 Days</h2>
+    <h2>Last 7 Days (total)</h2>
     <div class="stats-grid" id="last7-stats"></div>
   </div>
 
@@ -226,6 +226,10 @@
           <div class="stat-title">Fat</div>
           <div class="stat-value">${stats.total_fat.toFixed(1)} g${labelSuffix}</div>
         </div>
+        <div class="stat">
+          <div class="stat-title">Alcohol</div>
+          <div class="stat-value">${stats.total_alcohol_units.toFixed(1)} units${labelSuffix}</div>
+        </div>
       `;
     }
 
@@ -242,12 +246,13 @@
             <div class="entry-content">
               <div class="entry-main">${e.description}</div>
               <div class="entry-meta">
-                ${timeStr} · ${e.calories.toFixed(0)} kcal ·
-                P ${e.protein.toFixed(1)}g ·
-                C ${e.carbs.toFixed(1)}g ·
-                F ${e.fat.toFixed(1)}g
-              </div>
+              ${timeStr} · ${e.calories.toFixed(0)} kcal ·
+              P ${e.protein.toFixed(1)}g ·
+              C ${e.carbs.toFixed(1)}g ·
+              F ${e.fat.toFixed(1)}g ·
+              Alc ${e.alcohol_units.toFixed(1)}u
             </div>
+          </div>
             <button class="icon-btn" data-delete-id="${e.id}" aria-label="Delete entry">✕</button>
           </li>
         `;
@@ -256,7 +261,7 @@
 
     function updateUI(data) {
       renderStats(todayStatsEl, data.today_stats);
-      renderStats(last7StatsEl, data.last7_stats, { isAverage: true });
+      renderStats(last7StatsEl, data.last7_stats, { isAverage: false });
       renderEntries(data.today_entries);
     }
 

@@ -1,6 +1,7 @@
 # Calorie Tracker
 
 FastAPI + simple HTML front-end to log daily food, get macro estimates with OpenAI, view history by date, and manage shorthand notes that inform the model.
+Now also tracks alcohol units and shows totals for specific days and the last 7 days.
 
 ## Requirements
 - Python 3.11+
@@ -20,8 +21,9 @@ Then open `http://localhost:8000/static/index.html`.
 ## Endpoints (high level)
 - `POST /api/entries` — add entry (uses notes as context for the model)
 - `POST /api/entries/photo` — add entry from an uploaded image
-- `GET /api/dashboard` — today + last-7-day averages
+- `GET /api/dashboard` — today + last-7-day totals
 - `GET /api/day?day=YYYY-MM-DD` — stats/entries for a specific date
+- `PUT /api/entries/{id}` — update an entry’s description/macros/timestamp
 - `DELETE /api/entries/{id}` — remove an entry
 - `GET/POST/PUT/DELETE /api/notes` — manage shorthand notes
 

@@ -28,7 +28,7 @@
     }
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       gap: 0.75rem;
     }
     .stat {
@@ -104,6 +104,56 @@
       transform: translateY(-1px);
       box-shadow: 0 4px 10px rgba(0,0,0,0.12);
     }
+    textarea,
+    input[type="number"] {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      padding: 0.45rem 0.5rem;
+      font-size: 0.95rem;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .entry-actions {
+      display: flex;
+      gap: 0.35rem;
+      margin-top: 0.35rem;
+    }
+    .pill-btn {
+      border-radius: 999px;
+      padding: 0.35rem 0.7rem;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .pill-btn.primary {
+      background: #111827;
+      color: #fff;
+      border-color: #111827;
+    }
+    .pill-btn:hover {
+      background: #f3f4f6;
+    }
+    .pill-btn.primary:hover {
+      background: #0b1220;
+    }
+    .edit-grid {
+      display: grid;
+      gap: 0.5rem;
+      width: 100%;
+    }
+    .edit-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.5rem;
+    }
+    .field-label {
+      font-weight: 600;
+      font-size: 0.85rem;
+      margin-bottom: 0.15rem;
+      display: inline-block;
+    }
   </style>
 </head>
 <body>
@@ -139,6 +189,25 @@
     const entriesEl = document.getElementById("entries");
     const dayInput = document.getElementById("day-input");
     const errorEl = document.getElementById("error");
+    let currentEntries = [];
+    let editingId = null;
+
+    function formatDateInput(dt) {
+      const year = dt.getFullYear();
+      const month = (dt.getMonth() + 1).toString().padStart(2, "0");
+      const day = dt.getDate().toString().padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    function formatTimeInput(dt) {
+      const hours = dt.getHours().toString().padStart(2, "0");
+      const minutes = dt.getMinutes().toString().padStart(2, "0");
+      return `${hours}:${minutes}`;
+    }
+
+    function setError(message = "") {
+      errorEl.textContent = message;
+    }
 
     function renderStats(stats) {
       statsEl.innerHTML = `
@@ -158,6 +227,10 @@
           <div class="stat-title">Fat</div>
           <div class="stat-value">${stats.total_fat.toFixed(1)} g</div>
         </div>
+        <div class="stat">
+          <div class="stat-title">Alcohol</div>
+          <div class="stat-value">${stats.total_alcohol_units.toFixed(1)} units</div>
+        </div>
       `;
     }
 
@@ -169,22 +242,86 @@
       entriesEl.innerHTML = entries.map(e => {
         const dt = new Date(e.ts);
         const timeStr = dt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+        const dateStr = formatDateInput(dt);
+        const timeInput = formatTimeInput(dt);
+        const isEditing = Number(editingId) === Number(e.id);
+        if (isEditing) {
+          return `
+            <li class="entry" data-entry-id="${e.id}">
+              <div class="edit-grid">
+                <div>
+                  <span class="field-label">Description</span>
+                  <textarea data-field="description">${e.description}</textarea>
+                </div>
+                <div class="edit-row">
+                  <div>
+                    <span class="field-label">Calories</span>
+                    <input type="number" step="1" data-field="calories" value="${e.calories.toFixed(0)}" />
+                  </div>
+                  <div>
+                    <span class="field-label">Protein (g)</span>
+                    <input type="number" step="0.1" data-field="protein" value="${e.protein.toFixed(1)}" />
+                  </div>
+                  <div>
+                    <span class="field-label">Carbs (g)</span>
+                    <input type="number" step="0.1" data-field="carbs" value="${e.carbs.toFixed(1)}" />
+                  </div>
+                  <div>
+                    <span class="field-label">Fat (g)</span>
+                    <input type="number" step="0.1" data-field="fat" value="${e.fat.toFixed(1)}" />
+                  </div>
+                  <div>
+                    <span class="field-label">Alcohol (units)</span>
+                    <input type="number" step="0.1" data-field="alcohol_units" value="${e.alcohol_units.toFixed(1)}" />
+                  </div>
+                </div>
+                <div class="edit-row">
+                  <div>
+                    <span class="field-label">Date</span>
+                    <input type="date" data-field="date" value="${dateStr}" />
+                  </div>
+                  <div>
+                    <span class="field-label">Time</span>
+                    <input type="time" data-field="time" value="${timeInput}" />
+                  </div>
+                </div>
+                <div class="entry-actions">
+                  <button class="pill-btn primary" data-save-id="${e.id}" type="button">Save</button>
+                  <button class="pill-btn" data-cancel-id="${e.id}" type="button">Cancel</button>
+                </div>
+              </div>
+            </li>
+          `;
+        }
         return `
-          <li class="entry">
+          <li class="entry" data-entry-id="${e.id}">
             <div class="entry-main">${e.description}</div>
             <div class="entry-meta">
               ${timeStr} · ${e.calories.toFixed(0)} kcal ·
               P ${e.protein.toFixed(1)}g ·
               C ${e.carbs.toFixed(1)}g ·
-              F ${e.fat.toFixed(1)}g
+              F ${e.fat.toFixed(1)}g ·
+              Alc ${e.alcohol_units.toFixed(1)}u
+            </div>
+            <div class="entry-actions">
+              <button class="pill-btn" data-edit-id="${e.id}" type="button">Edit</button>
             </div>
           </li>
         `;
       }).join("");
     }
 
+    function renderDay(data) {
+      currentEntries = data.entries;
+      if (!currentEntries.find(e => Number(e.id) === Number(editingId))) {
+        editingId = null;
+      }
+      renderStats(data.stats);
+      renderEntries(currentEntries);
+    }
+
     async function loadDay(day) {
-      errorEl.textContent = "";
+      setError("");
       try {
         const res = await fetch(`/api/day?day=${encodeURIComponent(day)}`);
         if (!res.ok) {
@@ -192,18 +329,109 @@
           throw new Error(errData.detail || "Failed to load day");
         }
         const data = await res.json();
-        renderStats(data.stats);
-        renderEntries(data.entries);
+        renderDay(data);
       } catch (err) {
-        errorEl.textContent = err.message;
+        setError(err.message);
+      }
+    }
+
+    async function saveEdit(id) {
+      setError("");
+      const row = entriesEl.querySelector(`[data-entry-id="${id}"]`);
+      if (!row) return;
+      const description = row.querySelector("[data-field='description']").value.trim();
+      const calories = Number(row.querySelector("[data-field='calories']").value);
+      const protein = Number(row.querySelector("[data-field='protein']").value);
+      const carbs = Number(row.querySelector("[data-field='carbs']").value);
+      const fat = Number(row.querySelector("[data-field='fat']").value);
+      const alcohol = Number(row.querySelector("[data-field='alcohol_units']").value);
+      const dateVal = row.querySelector("[data-field='date']").value;
+      const timeVal = row.querySelector("[data-field='time']").value;
+
+      if (!description) {
+        setError("Description is required.");
+        return;
+      }
+      if (!dateVal || !timeVal) {
+        setError("Pick a date and time.");
+        return;
+      }
+      if ([calories, protein, carbs, fat, alcohol].some((v) => Number.isNaN(v))) {
+        setError("Calories, protein, carbs, fat, and alcohol must be numbers.");
+        return;
+      }
+
+      const ts = new Date(`${dateVal}T${timeVal}`);
+      if (Number.isNaN(ts.getTime())) {
+        setError("Invalid date or time.");
+        return;
+      }
+
+      const saveBtn = row.querySelector("[data-save-id]");
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving...";
+      }
+
+      try {
+        const res = await fetch(`/api/entries/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            description,
+            calories,
+            protein,
+            carbs,
+            fat,
+            alcohol_units: alcohol,
+            ts: ts.toISOString(),
+          }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to update entry");
+        }
+        editingId = null;
+        await loadDay(dayInput.value || todayIso);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save";
+        }
       }
     }
 
     const todayIso = new Date().toISOString().slice(0, 10);
     dayInput.value = todayIso;
     dayInput.addEventListener("change", () => {
+      editingId = null;
+      currentEntries = [];
       if (!dayInput.value) return;
       loadDay(dayInput.value);
+    });
+
+    entriesEl.addEventListener("click", (e) => {
+      const editBtn = e.target.closest("[data-edit-id]");
+      const cancelBtn = e.target.closest("[data-cancel-id]");
+      const saveBtn = e.target.closest("[data-save-id]");
+
+      if (editBtn) {
+        editingId = Number(editBtn.getAttribute("data-edit-id"));
+        renderEntries(currentEntries);
+        return;
+      }
+      if (cancelBtn) {
+        editingId = null;
+        setError("");
+        renderEntries(currentEntries);
+        return;
+      }
+      if (saveBtn) {
+        const id = Number(saveBtn.getAttribute("data-save-id"));
+        saveEdit(id);
+      }
     });
 
     loadDay(todayIso);
