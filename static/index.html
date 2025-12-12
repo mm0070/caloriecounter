@@ -179,6 +179,58 @@
       text-align: center;
       margin-top: 0.5rem;
     }
+    .mood-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-top: 0.35rem;
+    }
+    .mood-actions button {
+      flex: 1;
+      min-width: 120px;
+      padding: 0.55rem 0.75rem;
+      border-radius: 10px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .mood-actions button.primary {
+      background: #111827;
+      color: #fff;
+      border-color: #111827;
+    }
+    .mood-actions button.primary:hover {
+      background: #0b1220;
+    }
+    .mood-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
+      gap: 0.35rem;
+      margin: 0.5rem 0;
+    }
+    .mood-btn {
+      padding: 0.5rem 0.65rem;
+      border-radius: 10px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .mood-btn.active {
+      background: #111827;
+      color: #fff;
+      border-color: #111827;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    }
+    .mood-note {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      padding: 0.45rem 0.5rem;
+      font-size: 0.95rem;
+      box-sizing: border-box;
+    }
   </style>
 </head>
 <body>
@@ -204,6 +256,34 @@
   <div class="card">
     <h2>Alcohol (last 30 days)</h2>
     <div class="stats-grid" id="last30-alcohol"></div>
+  </div>
+
+  <div class="card">
+    <h2>Today's mood</h2>
+    <div id="today-mood-display" style="margin-bottom:0.5rem;font-weight:600;"></div>
+    <div>
+      <span class="field-label">Mood (1 = low, 10 = high)</span>
+      <div class="mood-grid" id="today-mood-grid">
+        <button type="button" class="mood-btn" data-mood-btn="1">1</button>
+        <button type="button" class="mood-btn" data-mood-btn="2">2</button>
+        <button type="button" class="mood-btn" data-mood-btn="3">3</button>
+        <button type="button" class="mood-btn" data-mood-btn="4">4</button>
+        <button type="button" class="mood-btn" data-mood-btn="5">5</button>
+        <button type="button" class="mood-btn" data-mood-btn="6">6</button>
+        <button type="button" class="mood-btn" data-mood-btn="7">7</button>
+        <button type="button" class="mood-btn" data-mood-btn="8">8</button>
+        <button type="button" class="mood-btn" data-mood-btn="9">9</button>
+        <button type="button" class="mood-btn" data-mood-btn="10">10</button>
+      </div>
+    </div>
+    <div style="margin-top:0.35rem;">
+      <span class="field-label">Note (optional)</span>
+      <input id="today-mood-note" class="mood-note" type="text" placeholder="Short note" />
+    </div>
+    <div class="mood-actions">
+      <button class="primary" id="today-save-mood" type="button">Save mood</button>
+      <button id="today-clear-mood" type="button">Clear</button>
+    </div>
   </div>
 
   <div class="card">
@@ -247,6 +327,12 @@
     const photoInput = document.getElementById("photo-input");
     const uploadBtn = document.getElementById("upload-btn");
     const errorEl = document.getElementById("error");
+    const todayMoodDisplay = document.getElementById("today-mood-display");
+    const todayMoodButtons = Array.from(document.querySelectorAll("#today-mood-grid [data-mood-btn]"));
+    const todayMoodNote = document.getElementById("today-mood-note");
+    const todaySaveMoodBtn = document.getElementById("today-save-mood");
+    const todayClearMoodBtn = document.getElementById("today-clear-mood");
+    let todayMoodSelection = null;
     let hasForcedReload = false;
 
     function forceFreshLoad(reason) {
@@ -299,6 +385,86 @@
           <div class="stat-value">${stats.total_alcohol_units.toFixed(1)} units${alcoholSuffix}</div>
         </div>
       `;
+    }
+
+    function setTodayMoodSelection(score) {
+      todayMoodSelection = score;
+      todayMoodButtons.forEach((btn) => {
+        const val = Number(btn.getAttribute("data-mood-btn"));
+        btn.classList.toggle("active", val === score);
+      });
+    }
+
+    function renderTodayMood(mood) {
+      if (!mood) {
+        todayMoodDisplay.textContent = "No mood logged today.";
+        setTodayMoodSelection(null);
+        todayMoodNote.value = "";
+        return;
+      }
+      todayMoodDisplay.textContent = `Mood: ${mood.mood_score}/10${mood.mood_note ? " — " + mood.mood_note : ""}`;
+      setTodayMoodSelection(mood.mood_score);
+      todayMoodNote.value = mood.mood_note || "";
+    }
+
+    async function loadTodayMood() {
+      try {
+        const res = await fetch("/api/mood");
+        if (!res.ok) throw new Error("Failed to load mood");
+        const data = await res.json();
+        renderTodayMood(data);
+      } catch (err) {
+        todayMoodDisplay.textContent = err.message;
+      }
+    }
+
+    async function saveTodayMood() {
+      if (!todayMoodSelection) {
+        errorEl.textContent = "Select a mood score (1-10).";
+        return;
+      }
+      errorEl.textContent = "";
+      todaySaveMoodBtn.disabled = true;
+      try {
+        const res = await fetch("/api/mood", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: new Date().toISOString().slice(0, 10),
+            mood_score: todayMoodSelection,
+            mood_note: todayMoodNote.value.trim() || null,
+          }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to save mood");
+        }
+        const data = await res.json();
+        renderTodayMood(data);
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        todaySaveMoodBtn.disabled = false;
+      }
+    }
+
+    async function clearTodayMood() {
+      todayClearMoodBtn.disabled = true;
+      errorEl.textContent = "";
+      try {
+        const res = await fetch(`/api/mood?day=${encodeURIComponent(new Date().toISOString().slice(0, 10))}`, { method: "DELETE" });
+        if (!res.ok && res.status !== 204) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to clear mood");
+        }
+        setTodayMoodSelection(null);
+        todayMoodNote.value = "";
+        todayMoodDisplay.textContent = "No mood logged today.";
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        todayClearMoodBtn.disabled = false;
+      }
     }
 
     function renderEntries(entries) {
@@ -466,10 +632,19 @@
       if (!btn) return;
       deleteEntry(btn.getAttribute("data-delete-id"));
     });
+    todayMoodButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const val = Number(btn.getAttribute("data-mood-btn"));
+        setTodayMoodSelection(val);
+      });
+    });
+    todaySaveMoodBtn.addEventListener("click", saveTodayMood);
+    todayClearMoodBtn.addEventListener("click", clearTodayMood);
 
     initDateTime();
     window.addEventListener("pageshow", initDateTime);
     loadDashboard();
+    loadTodayMood();
   </script>
 </body>
 </html>

@@ -3,12 +3,12 @@ import json
 import base64
 from datetime import datetime, timedelta, timezone, date
 
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import (
-    create_engine, Column, Integer, Float, Text, DateTime, func, text
+    create_engine, Column, Integer, Float, Text, DateTime, Date, func, text
 )
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
@@ -29,7 +29,9 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Resolve static directory relative to this file so tests work regardless of cwd
+STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "static"))
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 # ---------- DB Model ----------
@@ -54,6 +56,16 @@ class Note(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(Text, nullable=False, unique=True)
     content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc))
+
+
+class Mood(Base):
+    __tablename__ = "moods"
+
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(Date, nullable=False, unique=True, index=True)
+    mood_score = Column(Integer, nullable=False)
+    mood_note = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc))
 
 
@@ -118,6 +130,18 @@ class StatsOut(BaseModel):
     total_alcohol_units: float
 
 
+class MoodRequest(BaseModel):
+    date: date
+    mood_score: int
+    mood_note: str | None = None
+
+
+class MoodOut(BaseModel):
+    date: date
+    mood_score: int
+    mood_note: str | None = None
+
+
 class DashboardOut(BaseModel):
     today_stats: StatsOut
     last7_stats: StatsOut
@@ -129,6 +153,7 @@ class DayOut(BaseModel):
     date: date
     stats: StatsOut
     entries: list[EntryOut]
+    mood: MoodOut | None = None
 
 
 class CalendarDayOut(BaseModel):
@@ -138,6 +163,15 @@ class CalendarDayOut(BaseModel):
     total_carbs: float
     total_fat: float
     total_alcohol_units: float
+    mood_score: int | None = None
+    mood_note: str | None = None
+
+
+class SeriesPoint(BaseModel):
+    date: date
+    calories: float
+    protein: float
+    mood_score: int | None = None
 
 
 # ---------- Helpers ----------
@@ -171,8 +205,9 @@ def get_date_range(day: date):
 
 def get_last7_range():
     today = date.today()
-    start = datetime.combine(today - timedelta(days=6), datetime.min.time())
-    end = datetime.combine(today + timedelta(days=1), datetime.min.time())
+    # Only include fully completed days: last 7 days ending yesterday
+    start = datetime.combine(today - timedelta(days=7), datetime.min.time())
+    end = datetime.combine(today, datetime.min.time())
     start_utc = start.astimezone(timezone.utc) if start.tzinfo else start.replace(tzinfo=timezone.utc)
     end_utc = end.astimezone(timezone.utc) if end.tzinfo else end.replace(tzinfo=timezone.utc)
     return start_utc, end_utc
@@ -233,16 +268,16 @@ def average_stats_on_logged_days(db: Session, start: datetime, end: datetime) ->
         .all()
     )
 
-    logged_days = [day for day in daily_totals if float(day[1]) > 0]
-    if not logged_days:
-        return empty_stats() 
+    # Days appear in daily_totals only when at least one entry exists
+    if not daily_totals:
+        return empty_stats()
 
-    day_count = len(logged_days)
-    total_calories = sum(float(day[1]) for day in logged_days)
-    total_protein = sum(float(day[2]) for day in logged_days)
-    total_carbs = sum(float(day[3]) for day in logged_days)
-    total_fat = sum(float(day[4]) for day in logged_days)
-    total_alcohol = sum(float(day[5]) for day in logged_days)
+    day_count = len(daily_totals)
+    total_calories = sum(float(day[1]) for day in daily_totals)
+    total_protein = sum(float(day[2]) for day in daily_totals)
+    total_carbs = sum(float(day[3]) for day in daily_totals)
+    total_fat = sum(float(day[4]) for day in daily_totals)
+    total_alcohol = sum(float(day[5]) for day in daily_totals)
 
     return StatsOut(
         total_calories=total_calories / day_count,
@@ -259,6 +294,14 @@ def note_to_out(note: Note) -> NoteOut:
         title=note.title,
         content=note.content,
         created_at=note.created_at,
+    )
+
+
+def mood_to_out(mood: Mood) -> MoodOut:
+    return MoodOut(
+        date=mood.date,
+        mood_score=mood.mood_score,
+        mood_note=mood.mood_note,
     )
 
 
@@ -442,6 +485,7 @@ def get_dashboard(db: Session) -> DashboardOut:
 def get_day_data(db: Session, target_date: date) -> DayOut:
     start, end = get_date_range(target_date)
     stats = aggregate_stats(db, start, end)
+    mood = db.query(Mood).filter(Mood.date == target_date).first()
     entries = (
         db.query(Entry)
         .filter(Entry.ts >= start, Entry.ts < end)
@@ -462,7 +506,12 @@ def get_day_data(db: Session, target_date: date) -> DayOut:
         for e in entries
     ]
 
-    return DayOut(date=target_date, stats=stats, entries=entries_out)
+    return DayOut(
+        date=target_date,
+        stats=stats,
+        entries=entries_out,
+        mood=mood_to_out(mood) if mood else None,
+    )
 
 
 def get_month_range(target_month: str | None = None):
@@ -490,7 +539,8 @@ def get_month_range(target_month: str | None = None):
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    with open("static/index.html", "r", encoding="utf-8") as f:
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    with open(index_path, "r", encoding="utf-8") as f:
         return f.read()
 
 
@@ -661,11 +711,61 @@ async def day_view(day: str | None = None):
     return get_day_data(db, target_date)
 
 
+@app.put("/api/mood", response_model=MoodOut)
+async def upsert_mood(payload: MoodRequest):
+    db = next(get_db())
+    if payload.mood_score < 1 or payload.mood_score > 10:
+        raise HTTPException(status_code=400, detail="mood_score must be between 1 and 10")
+
+    mood = db.query(Mood).filter(Mood.date == payload.date).first()
+    note = payload.mood_note.strip() if payload.mood_note else None
+
+    if mood:
+        mood.mood_score = payload.mood_score
+        mood.mood_note = note
+    else:
+        mood = Mood(date=payload.date, mood_score=payload.mood_score, mood_note=note)
+        db.add(mood)
+
+    db.commit()
+    db.refresh(mood)
+    return mood_to_out(mood)
+
+
+@app.get("/api/mood", response_model=MoodOut | None)
+async def get_mood(day: str | None = None):
+    db = next(get_db())
+    try:
+        target_date = date.fromisoformat(day) if day else date.today()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    mood = db.query(Mood).filter(Mood.date == target_date).first()
+    return mood_to_out(mood) if mood else None
+
+
+@app.delete("/api/mood", status_code=204)
+async def delete_mood(day: str):
+    db = next(get_db())
+    try:
+        target_date = date.fromisoformat(day)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    mood = db.query(Mood).filter(Mood.date == target_date).first()
+    if mood:
+        db.delete(mood)
+        db.commit()
+    return Response(status_code=204)
+
+
 @app.get("/api/calendar", response_model=list[CalendarDayOut])
 async def calendar(month: str | None = None):
     db = next(get_db())
     first_day, start_dt, end_dt = get_month_range(month)
-    rows = (
+    moods = db.query(Mood).filter(Mood.date >= first_day, Mood.date < end_dt.date()).all()
+    mood_map = {m.date: m for m in moods}
+    entry_rows = (
         db.query(
             func.date(Entry.ts),
             func.coalesce(func.sum(Entry.calories), 0),
@@ -679,17 +779,74 @@ async def calendar(month: str | None = None):
         .all()
     )
 
+    stats_map = {
+        date.fromisoformat(row[0]): {
+            "total_calories": float(row[1]),
+            "total_protein": float(row[2]),
+            "total_carbs": float(row[3]),
+            "total_fat": float(row[4]),
+            "total_alcohol_units": float(row[5]),
+        }
+        for row in entry_rows
+    }
+
+    all_dates = sorted(set(stats_map.keys()) | set(mood_map.keys()))
+
     return [
         CalendarDayOut(
-            date=date.fromisoformat(row[0]),
-            total_calories=float(row[1]),
-            total_protein=float(row[2]),
-            total_carbs=float(row[3]),
-            total_fat=float(row[4]),
-            total_alcohol_units=float(row[5]),
+            date=d,
+            total_calories=stats_map.get(d, {}).get("total_calories", 0.0),
+            total_protein=stats_map.get(d, {}).get("total_protein", 0.0),
+            total_carbs=stats_map.get(d, {}).get("total_carbs", 0.0),
+            total_fat=stats_map.get(d, {}).get("total_fat", 0.0),
+            total_alcohol_units=stats_map.get(d, {}).get("total_alcohol_units", 0.0),
+            mood_score=mood_map.get(d).mood_score if mood_map.get(d) else None,
+            mood_note=mood_map.get(d).mood_note if mood_map.get(d) else None,
         )
-        for row in rows
+        for d in all_dates
     ]
+
+
+@app.get("/api/series/last7", response_model=list[SeriesPoint])
+async def last7_series():
+    db = next(get_db())
+    start, end = get_last7_range()  # start = today-7, end = today (excludes current day)
+    # Stats per day
+    entry_rows = (
+        db.query(
+            func.date(Entry.ts),
+            func.coalesce(func.sum(Entry.calories), 0),
+            func.coalesce(func.sum(Entry.protein), 0),
+        )
+        .filter(Entry.ts >= start, Entry.ts < end)
+        .group_by(func.date(Entry.ts))
+        .all()
+    )
+    stats_map = {
+        date.fromisoformat(row[0]): {
+            "calories": float(row[1]),
+            "protein": float(row[2]),
+        }
+        for row in entry_rows
+    }
+
+    # Moods per day
+    mood_rows = db.query(Mood).filter(Mood.date >= start.date(), Mood.date < end.date()).all()
+    mood_map = {m.date: m.mood_score for m in mood_rows}
+
+    days = [start.date() + timedelta(days=i) for i in range((end - start).days)]
+
+    series = []
+    for d in days:
+        series.append(
+            SeriesPoint(
+                date=d,
+                calories=stats_map.get(d, {}).get("calories", 0.0),
+                protein=stats_map.get(d, {}).get("protein", 0.0),
+                mood_score=mood_map.get(d),
+            )
+        )
+    return series
 
 
 @app.get("/api/notes", response_model=list[NoteOut])

@@ -78,6 +78,57 @@
       background: rgba(248, 113, 113, 0.16);
       color: #b91c1c;
     }
+.badge.mood {
+  background: rgba(59, 130, 246, 0.14);
+  color: #1d4ed8;
+}
+.badge.mood.mood-low { background: rgba(239, 68, 68, 0.16); color: #b91c1c; }
+    .badge.mood.mood-mid { background: rgba(251, 191, 36, 0.18); color: #92400e; }
+    .badge.mood.mood-high { background: rgba(34, 197, 94, 0.14); color: #166534; }
+    .mood-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
+      gap: 0.35rem;
+      margin: 0.5rem 0;
+    }
+    .mood-btn {
+      padding: 0.5rem 0.65rem;
+      border-radius: 10px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .mood-btn.active {
+      background: #111827;
+      color: #fff;
+      border-color: #111827;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    }
+.mood-note {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  padding: 0.45rem 0.5rem;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+.calendar-nav {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.calendar-nav button {
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+.calendar-nav span {
+  font-weight: 700;
+}
     .legend {
       display: flex;
       gap: 0.5rem;
@@ -234,11 +285,44 @@
   </div>
 
   <div class="card">
+    <h2>Daily mood</h2>
+    <div id="mood-display" style="margin-bottom:0.5rem; font-weight:600;"></div>
+    <div>
+      <span class="field-label">Mood (1 = low, 10 = high)</span>
+      <div class="mood-grid" id="mood-grid">
+        <button type="button" class="mood-btn" data-mood-btn="1">1</button>
+        <button type="button" class="mood-btn" data-mood-btn="2">2</button>
+        <button type="button" class="mood-btn" data-mood-btn="3">3</button>
+        <button type="button" class="mood-btn" data-mood-btn="4">4</button>
+        <button type="button" class="mood-btn" data-mood-btn="5">5</button>
+        <button type="button" class="mood-btn" data-mood-btn="6">6</button>
+        <button type="button" class="mood-btn" data-mood-btn="7">7</button>
+        <button type="button" class="mood-btn" data-mood-btn="8">8</button>
+        <button type="button" class="mood-btn" data-mood-btn="9">9</button>
+        <button type="button" class="mood-btn" data-mood-btn="10">10</button>
+      </div>
+    </div>
+    <div style="margin-top:0.35rem;">
+      <span class="field-label">Note (optional)</span>
+      <input id="mood-note" class="mood-note" type="text" placeholder="Short note" />
+    </div>
+    <div class="entry-actions">
+      <button class="pill-btn primary" id="save-mood" type="button">Save mood</button>
+      <button class="pill-btn" id="clear-mood" type="button">Clear</button>
+    </div>
+  </div>
+
+  <div class="card">
     <div class="calendar-header">
       <h2 style="margin:0;">Monthly view</h2>
-      <input type="month" id="month-input" />
+      <div class="calendar-nav">
+        <button type="button" id="month-prev">◀</button>
+        <span id="month-label"></span>
+        <button type="button" id="month-next">▶</button>
+      </div>
     </div>
     <div class="legend">
+      <span class="badge mood"><i class="fa-solid fa-face-smile"></i> Mood set</span>
       <span class="badge alcohol"><i class="fa-solid fa-wine-bottle"></i> Alcohol</span>
       <span class="badge protein"><i class="fa-solid fa-dumbbell"></i> Protein ≥ 150g</span>
       <span class="badge calories"><i class="fa-solid fa-fire"></i> Calories > 2800</span>
@@ -251,17 +335,52 @@
     <ul class="entries-list" id="entries"></ul>
   </div>
 
+  <div class="card">
+    <h2>Charts (last 7 days, excludes today)</h2>
+    <div class="chart-wrapper" style="margin-bottom:1rem;">
+      <canvas id="chart-calories" height="180"></canvas>
+    </div>
+    <div class="chart-wrapper" style="margin-bottom:1rem;">
+      <canvas id="chart-protein" height="180"></canvas>
+    </div>
+    <div class="chart-wrapper">
+      <canvas id="chart-mood" height="180"></canvas>
+    </div>
+  </div>
+
   <script>
+    const chartJsScript = document.createElement("script");
+    chartJsScript.src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js";
+    chartJsScript.defer = true;
+    document.head.appendChild(chartJsScript);
+
     const statsEl = document.getElementById("day-stats");
     const entriesEl = document.getElementById("entries");
     const dayInput = document.getElementById("day-input");
-    const monthInput = document.getElementById("month-input");
+    const monthLabel = document.getElementById("month-label");
+    const monthPrevBtn = document.getElementById("month-prev");
+    const monthNextBtn = document.getElementById("month-next");
     const calendarEl = document.getElementById("calendar");
     const errorEl = document.getElementById("error");
+    const moodDisplay = document.getElementById("mood-display");
+    const moodGrid = document.getElementById("mood-grid");
+    const moodButtons = Array.from(document.querySelectorAll("[data-mood-btn]"));
+    const moodNoteInput = document.getElementById("mood-note");
+    const saveMoodBtn = document.getElementById("save-mood");
+    const clearMoodBtn = document.getElementById("clear-mood");
+    const caloriesCanvas = document.getElementById("chart-calories");
+    const proteinCanvas = document.getElementById("chart-protein");
+    const moodCanvas = document.getElementById("chart-mood");
     let currentEntries = [];
     let editingId = null;
     let calendarData = [];
     let hasForcedReload = false;
+    let currentMood = null;
+    let selectedMoodScore = null;
+    let calendarMonth = new Date();
+    let caloriesChart = null;
+    let proteinChart = null;
+    let moodChart = null;
 
     function forceFreshLoad(reason) {
       if (hasForcedReload) return;
@@ -281,6 +400,10 @@
       const month = (dt.getMonth() + 1).toString().padStart(2, "0");
       const day = dt.getDate().toString().padStart(2, "0");
       return `${year}-${month}-${day}`;
+    }
+
+    function formatMonth(dt) {
+      return `${dt.getFullYear()}-${(dt.getMonth() + 1).toString().padStart(2, "0")}`;
     }
 
     function formatTimeInput(dt) {
@@ -397,11 +520,40 @@
 
     function renderDay(data) {
       currentEntries = data.entries;
+      currentMood = data.mood || null;
       if (!currentEntries.find(e => Number(e.id) === Number(editingId))) {
         editingId = null;
       }
       renderStats(data.stats);
+      renderMood(currentMood);
       renderEntries(currentEntries);
+      renderCharts();
+    }
+
+    function computeMoodColor(score) {
+      const ratio = (score - 1) / 9; // 1..10 -> 0..1
+      const hue = 0 + ratio * 120; // red to green
+      return `hsl(${hue}, 75%, 75%)`;
+    }
+
+    function setMoodSelection(score) {
+      selectedMoodScore = score;
+      moodButtons.forEach((btn) => {
+        const val = Number(btn.getAttribute("data-mood-btn"));
+        btn.classList.toggle("active", val === score);
+      });
+    }
+
+    function renderMood(mood) {
+      if (!mood) {
+        moodDisplay.textContent = "No mood set for this day.";
+        setMoodSelection(null);
+        moodNoteInput.value = "";
+        return;
+      }
+      moodDisplay.textContent = `Mood: ${mood.mood_score}/10${mood.mood_note ? " — " + mood.mood_note : ""}`;
+      setMoodSelection(mood.mood_score);
+      moodNoteInput.value = mood.mood_note || "";
     }
 
     function renderCalendar(monthStr) {
@@ -420,6 +572,12 @@
         const dateStr = `${year}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
         const data = dataMap.get(dateStr);
         const badges = [];
+        let moodStyle = "";
+        if (data?.mood_score) {
+          const bg = computeMoodColor(data.mood_score);
+          badges.push(`<span class="badge mood" style="background:${bg};color:#0f172a;"><i class="fa-solid fa-face-smile"></i> Mood ${data.mood_score}</span>`);
+          moodStyle = `style="background:${bg};"`;
+        }
         if (data?.total_alcohol_units > 0) {
           badges.push('<span class="badge alcohol"><i class="fa-solid fa-wine-bottle"></i> Alc</span>');
         }
@@ -430,7 +588,7 @@
           badges.push('<span class="badge calories"><i class="fa-solid fa-fire"></i> 2800+</span>');
         }
         cells.push(`
-          <div class="day-cell">
+          <div class="day-cell" data-date="${dateStr}" ${moodStyle}>
             <div class="day-label">${day}</div>
             ${badges.join("")}
           </div>
@@ -439,8 +597,116 @@
       calendarEl.innerHTML = cells.join("");
     }
 
-    async function loadCalendar(month) {
+    function ensureChartsLoaded() {
+      return new Promise((resolve) => {
+        if (window.Chart) {
+          resolve();
+          return;
+        }
+        chartJsScript.addEventListener("load", () => resolve());
+      });
+    }
+
+    async function renderCharts() {
+      try {
+        await ensureChartsLoaded();
+      } catch (err) {
+        console.error("Chart.js failed to load", err);
+        return;
+      }
+      try {
+        const res = await fetch("/api/series/last7");
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to load chart data");
+        }
+        const series = await res.json();
+        const labels = series.map((p) => p.date.slice(5)); // MM-DD
+        const calories = series.map((p) => p.calories || 0);
+        const protein = series.map((p) => p.protein || 0);
+        const moods = series.map((p) => p.mood_score ?? null);
+
+        const commonOptions = {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { autoSkip: false, maxRotation: 0, minRotation: 0 } },
+            y: { beginAtZero: true },
+          },
+          plugins: { legend: { display: false } },
+        };
+
+        if (caloriesChart) caloriesChart.destroy();
+        caloriesChart = new Chart(caloriesCanvas.getContext("2d"), {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "Calories",
+                data: calories,
+                backgroundColor: "rgba(248, 113, 113, 0.7)",
+                borderRadius: 6,
+              },
+            ],
+          },
+          options: { ...commonOptions, scales: { ...commonOptions.scales, y: { beginAtZero: true } } },
+        });
+
+        if (proteinChart) proteinChart.destroy();
+        proteinChart = new Chart(proteinCanvas.getContext("2d"), {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "Protein (g)",
+                data: protein,
+                backgroundColor: "rgba(34, 197, 94, 0.7)",
+                borderRadius: 6,
+              },
+            ],
+          },
+          options: { ...commonOptions, scales: { ...commonOptions.scales, y: { beginAtZero: true } } },
+        });
+
+        if (moodChart) moodChart.destroy();
+        moodChart = new Chart(moodCanvas.getContext("2d"), {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "Mood (1-10)",
+                data: moods,
+                borderColor: "rgba(59, 130, 246, 0.9)",
+                backgroundColor: "rgba(59, 130, 246, 0.2)",
+                spanGaps: true,
+                tension: 0.3,
+                pointRadius: 4,
+              },
+            ],
+          },
+          options: {
+            ...commonOptions,
+            scales: { ...commonOptions.scales, y: { min: 1, max: 10, ticks: { stepSize: 1 } } },
+          },
+        });
+      } catch (err) {
+        console.error(err);
+        setError(err.message);
+      }
+    }
+
+    function updateMonthLabel() {
+      const formatter = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+      monthLabel.textContent = formatter.format(calendarMonth);
+    }
+
+    async function loadCalendar() {
       setError("");
+      const month = formatMonth(calendarMonth);
+      updateMonthLabel();
       try {
         const res = await fetch(`/api/calendar?month=${encodeURIComponent(month)}`);
         if (!res.ok) {
@@ -464,6 +730,55 @@
         }
         const data = await res.json();
         renderDay(data);
+      } catch (err) {
+        setError(err.message);
+      }
+    }
+
+    async function saveMood() {
+      setError("");
+      const scoreVal = selectedMoodScore ? Number(selectedMoodScore) : null;
+      const noteVal = moodNoteInput.value.trim();
+      if (!dayInput.value) {
+        setError("Pick a day first.");
+        return;
+      }
+      if (!scoreVal) {
+        setError("Select a mood score (1-10).");
+        return;
+      }
+      try {
+        const res = await fetch("/api/mood", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: dayInput.value,
+            mood_score: scoreVal,
+            mood_note: noteVal || null,
+          }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to save mood");
+        }
+        await loadDay(dayInput.value || todayIso);
+        await loadCalendar();
+      } catch (err) {
+        setError(err.message);
+      }
+    }
+
+    async function clearMood() {
+      setError("");
+      if (!dayInput.value) return;
+      try {
+        const res = await fetch(`/api/mood?day=${encodeURIComponent(dayInput.value)}`, { method: "DELETE" });
+        if (!res.ok && res.status !== 204) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to clear mood");
+        }
+        await loadDay(dayInput.value || todayIso);
+        await loadCalendar();
       } catch (err) {
         setError(err.message);
       }
@@ -546,13 +861,13 @@
       loadDay(dayInput.value);
     });
 
-    const now = new Date();
-    const monthStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
-    monthInput.value = monthStr;
-    monthInput.addEventListener("change", () => {
-      if (!monthInput.value) return;
-      loadCalendar(monthInput.value);
-    });
+    function changeMonth(delta) {
+      calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + delta, 1);
+      loadCalendar();
+    }
+
+    monthPrevBtn.addEventListener("click", () => changeMonth(-1));
+    monthNextBtn.addEventListener("click", () => changeMonth(1));
 
     entriesEl.addEventListener("click", (e) => {
       const editBtn = e.target.closest("[data-edit-id]");
@@ -576,7 +891,29 @@
       }
     });
 
-    loadCalendar(monthStr);
+    moodGrid.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-mood-btn]");
+      if (!btn) return;
+      const val = Number(btn.getAttribute("data-mood-btn"));
+      setMoodSelection(val);
+    });
+
+    saveMoodBtn.addEventListener("click", saveMood);
+    clearMoodBtn.addEventListener("click", () => {
+      setMoodSelection(null);
+      moodNoteInput.value = "";
+      clearMood();
+    });
+
+    calendarEl.addEventListener("click", (e) => {
+      const cell = e.target.closest("[data-date]");
+      if (!cell) return;
+      const dateStr = cell.getAttribute("data-date");
+      dayInput.value = dateStr;
+      loadDay(dateStr);
+    });
+
+    loadCalendar();
     loadDay(todayIso);
   </script>
 </body>

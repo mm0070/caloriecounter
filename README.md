@@ -14,9 +14,19 @@ pip install -r requirements.txt
 
 ## Run
 ```bash
-uvicorn app.main:app --reload
+cd app
+uvicorn main:app --reload --port 8000 --env-file ../.env  # adjust --env-file path as needed
 ```
-Then open `http://localhost:8000/static/index.html`.
+Then open `http://localhost:8000/`.
+
+## Seed fake data (for testing)
+```bash
+cd app
+python seed_fake_data.py --days 14 --reset  # populates today minus 14 days; omit --reset to append
+```
+
+## Mood tracking
+- Set a daily mood (1–10 with optional note) on the Today page or History page; mood shows up in the calendar view for that day.
 
 ## Endpoints (high level)
 - `POST /api/entries` — add entry (uses notes as context for the model); optional `ts` ISO timestamp to backdate
