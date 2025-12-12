@@ -7,264 +7,13 @@
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-1f2bC4dQwDFiXBJgp7wa9u0edPFpKnz03Wx/89ZbduCMsZ/HXXIQK5vCk1vZ1tcHTul3e8DqRLH0PHJrL6R1g==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <style>
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-      padding: 1rem;
-      max-width: 720px;
-      margin-inline: auto;
-      background: #f5f5f5;
-    }
-    h1 {
-      margin: 0;
-    }
-    .card {
-      background: #ffffff;
-      border-radius: 12px;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
-    }
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 0.75rem;
-    }
-    .stat {
-      background: #fafafa;
-      border-radius: 8px;
-      padding: 0.5rem 0.75rem;
-      font-size: 0.9rem;
-    }
-    .calendar {
-      display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
-      gap: 0.4rem;
-      margin-top: 0.75rem;
-    }
-    .day-cell {
-      background: #fff;
-      border: 1px solid #e5e7eb;
-      border-radius: 10px;
-      padding: 0.35rem 0.4rem;
-      min-height: 70px;
-      display: flex;
-      flex-direction: column;
-      gap: 0.2rem;
-    }
-    .day-label {
-      font-weight: 700;
-      font-size: 0.9rem;
-    }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      font-size: 0.75rem;
-      padding: 0.15rem 0.4rem;
-      border-radius: 999px;
-      width: fit-content;
-    }
-    .badge.alcohol {
-      background: rgba(249, 115, 22, 0.14);
-      color: #c2410c;
-    }
-    .badge.protein {
-      background: rgba(34, 197, 94, 0.14);
-      color: #166534;
-    }
-    .badge.calories {
-      background: rgba(248, 113, 113, 0.16);
-      color: #b91c1c;
-    }
-.badge.mood {
-  background: rgba(59, 130, 246, 0.14);
-  color: #1d4ed8;
-}
-.badge.mood.mood-low { background: rgba(239, 68, 68, 0.16); color: #b91c1c; }
-    .badge.mood.mood-mid { background: rgba(251, 191, 36, 0.18); color: #92400e; }
-    .badge.mood.mood-high { background: rgba(34, 197, 94, 0.14); color: #166534; }
-    .mood-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
-      gap: 0.35rem;
-      margin: 0.5rem 0;
-    }
-    .mood-btn {
-      padding: 0.5rem 0.65rem;
-      border-radius: 10px;
-      border: 1px solid #e5e7eb;
-      background: #fff;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .mood-btn.active {
-      background: #111827;
-      color: #fff;
-      border-color: #111827;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.12);
-    }
-.mood-note {
-  width: 100%;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-  padding: 0.45rem 0.5rem;
-  font-size: 0.95rem;
-  box-sizing: border-box;
-}
-.calendar-nav {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-}
-.calendar-nav button {
-  border-radius: 999px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  padding: 0.4rem 0.7rem;
-  cursor: pointer;
-  font-weight: 600;
-}
-.calendar-nav span {
-  font-weight: 700;
-}
-    .legend {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-      margin-top: 0.25rem;
-      font-size: 0.85rem;
-    }
-    .calendar-header {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-    }
-    .stat-title {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      opacity: 0.7;
-    }
-    .stat-value {
-      font-size: 1.1rem;
-      font-weight: 600;
-    }
-    .entries-list {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-    .entry {
-      padding: 0.5rem 0;
-      border-bottom: 1px solid #eee;
-    }
-    .entry:last-child {
-      border-bottom: none;
-    }
-    .entry-main {
-      font-size: 0.95rem;
-      margin-bottom: 0.15rem;
-    }
-    .entry-meta {
-      font-size: 0.8rem;
-      opacity: 0.75;
-    }
-    .entry-empty {
-      display: block;
-      text-align: center;
-      opacity: 0.7;
-    }
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-    input[type="date"] {
-      padding: 0.5rem;
-      border-radius: 8px;
-      border: 1px solid #ccc;
-      font-size: 1rem;
-    }
-    .error {
-      color: #b91c1c;
-      font-size: 0.85rem;
-      margin-top: 0.5rem;
-    }
-    .nav-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      padding: 0.45rem 0.75rem;
-      border-radius: 999px;
-      text-decoration: none;
-      background: #111827;
-      color: #fff;
-      border: 1px solid #111827;
-      transition: transform 120ms ease, box-shadow 120ms ease;
-    }
-    .nav-btn:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 10px rgba(0,0,0,0.12);
-    }
-    textarea,
-    input[type="number"] {
-      width: 100%;
-      border-radius: 8px;
-      border: 1px solid #ccc;
-      padding: 0.45rem 0.5rem;
-      font-size: 0.95rem;
-      font-family: inherit;
-      box-sizing: border-box;
-    }
-    .entry-actions {
-      display: flex;
-      gap: 0.35rem;
-      margin-top: 0.35rem;
-    }
-    .pill-btn {
-      border-radius: 999px;
-      padding: 0.35rem 0.7rem;
-      border: 1px solid #e5e7eb;
-      background: #fff;
-      cursor: pointer;
-      font-size: 0.9rem;
-    }
-    .pill-btn.primary {
-      background: #111827;
-      color: #fff;
-      border-color: #111827;
-    }
-    .pill-btn:hover {
-      background: #f3f4f6;
-    }
-    .pill-btn.primary:hover {
-      background: #0b1220;
-    }
-    .edit-grid {
-      display: grid;
-      gap: 0.5rem;
-      width: 100%;
-    }
-    .edit-row {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 0.5rem;
-    }
-    .field-label {
-      font-weight: 600;
-      font-size: 0.85rem;
-      margin-bottom: 0.15rem;
-      display: inline-block;
-    }
-  </style>
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
-    <h1>History</h1>
-    <nav style="display:flex;gap:0.5rem;font-size:0.95rem;">
+  <div class="shell">
+  <header class="header">
+    <h1 style="margin:0;display:flex;align-items:center;gap:0.45rem;"><i class="fa-solid fa-clock-rotate-left"></i> History</h1>
+    <nav class="nav">
       <a href="/static/index.html" class="nav-btn"><i class="fa-solid fa-bolt"></i> Today</a>
       <a href="/static/history.html" class="nav-btn"><i class="fa-solid fa-clock-rotate-left"></i> History</a>
       <a href="/static/notes.html" class="nav-btn"><i class="fa-solid fa-note-sticky"></i> Notes</a>
@@ -273,20 +22,20 @@
 
   <div class="card">
     <div class="controls">
-      <label for="day-input"><strong>Select day:</strong></label>
+      <label class="field-label" for="day-input">Select day:</label>
       <input type="date" id="day-input" />
     </div>
     <div class="error" id="error"></div>
   </div>
 
   <div class="card">
-    <h2>Daily total</h2>
+    <h2><i class="fa-solid fa-gauge-high"></i> Daily total</h2>
     <div class="stats-grid" id="day-stats"></div>
   </div>
 
   <div class="card">
-    <h2>Daily mood</h2>
-    <div id="mood-display" style="margin-bottom:0.5rem; font-weight:600;"></div>
+    <h2><i class="fa-solid fa-face-smile"></i> Daily mood</h2>
+    <div id="mood-display" class="mood-banner">No mood set for this day.</div>
     <div>
       <span class="field-label">Mood (1 = low, 10 = high)</span>
       <div class="mood-grid" id="mood-grid">
@@ -314,17 +63,17 @@
 
   <div class="card">
     <div class="calendar-header">
-      <h2 style="margin:0;">Monthly view</h2>
+      <h2><i class="fa-solid fa-calendar"></i> Monthly view</h2>
       <div class="calendar-nav">
-        <button type="button" id="month-prev">◀</button>
+        <button type="button" id="month-prev">Prev</button>
         <span id="month-label"></span>
-        <button type="button" id="month-next">▶</button>
+        <button type="button" id="month-next">Next</button>
       </div>
     </div>
     <div class="legend">
       <span class="badge mood"><i class="fa-solid fa-face-smile"></i> Mood set</span>
       <span class="badge alcohol"><i class="fa-solid fa-wine-bottle"></i> Alcohol</span>
-      <span class="badge protein"><i class="fa-solid fa-dumbbell"></i> Protein ≥ 150g</span>
+      <span class="badge protein"><i class="fa-solid fa-dumbbell"></i> Protein >= 150g</span>
       <span class="badge calories"><i class="fa-solid fa-fire"></i> Calories > 2800</span>
     </div>
     <div class="calendar" id="calendar"></div>
@@ -346,6 +95,7 @@
     <div class="chart-wrapper">
       <canvas id="chart-mood" height="180"></canvas>
     </div>
+  </div>
   </div>
 
   <script>
@@ -504,10 +254,10 @@
           <li class="entry" data-entry-id="${e.id}">
             <div class="entry-main">${e.description}</div>
             <div class="entry-meta">
-              ${timeStr} · ${e.calories.toFixed(0)} kcal ·
-              P ${e.protein.toFixed(1)}g ·
-              C ${e.carbs.toFixed(1)}g ·
-              F ${e.fat.toFixed(1)}g ·
+              ${timeStr} | ${e.calories.toFixed(0)} kcal |
+              P ${e.protein.toFixed(1)}g |
+              C ${e.carbs.toFixed(1)}g |
+              F ${e.fat.toFixed(1)}g |
               Alc ${e.alcohol_units.toFixed(1)}u
             </div>
             <div class="entry-actions">
@@ -551,7 +301,7 @@
         moodNoteInput.value = "";
         return;
       }
-      moodDisplay.textContent = `Mood: ${mood.mood_score}/10${mood.mood_note ? " — " + mood.mood_note : ""}`;
+      moodDisplay.textContent = `Mood: ${mood.mood_score}/10${mood.mood_note ? " - " + mood.mood_note : ""}`;
       setMoodSelection(mood.mood_score);
       moodNoteInput.value = mood.mood_note || "";
     }
@@ -575,7 +325,7 @@
         let moodStyle = "";
         if (data?.mood_score) {
           const bg = computeMoodColor(data.mood_score);
-          badges.push(`<span class="badge mood" style="background:${bg};color:#0f172a;"><i class="fa-solid fa-face-smile"></i> Mood ${data.mood_score}</span>`);
+          badges.push(`<span class="badge mood" style="background:${bg};color:#0b1220;"><i class="fa-solid fa-face-smile"></i> Mood ${data.mood_score}</span>`);
           moodStyle = `style="background:${bg};"`;
         }
         if (data?.total_alcohol_units > 0) {

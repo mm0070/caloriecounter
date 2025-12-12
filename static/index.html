@@ -7,312 +7,134 @@
   <link rel="icon" href="/static/favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-1f2bC4dQwDFiXBJgp7wa9u0edPFpKnz03Wx/89ZbduCMsZ/HXXIQK5vCk1vZ1tcHTul3e8DqRLH0PHJrL6R1g==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/static/style.css" />
   <style>
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-      padding: 1rem;
-      max-width: 600px;
-      margin-inline: auto;
-      background: #f5f5f5;
-    }
-    h1 {
-      text-align: center;
-      margin-bottom: 1rem;
-    }
-    .nav-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      padding: 0.45rem 0.75rem;
-      border-radius: 999px;
-      text-decoration: none;
-      background: #111827;
-      color: #fff;
-      border: 1px solid #111827;
-      transition: transform 120ms ease, box-shadow 120ms ease;
-    }
-    .nav-btn:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 10px rgba(0,0,0,0.12);
-    }
-    .card {
-      background: #ffffff;
+    .mood-banner {
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.22), rgba(56, 189, 248, 0.18));
+      border: 1px solid rgba(56,189,248,0.35);
       border-radius: 12px;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
-    }
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 0.75rem;
-    }
-    .stat {
-      background: #fafafa;
-      border-radius: 8px;
-      padding: 0.5rem 0.75rem;
-      font-size: 0.9rem;
-    }
-    .stat-title {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      opacity: 0.7;
-    }
-    .stat-value {
-      font-size: 1.1rem;
+      padding: 0.75rem 0.85rem;
+      margin-top: 0.25rem;
       font-weight: 600;
-    }
-    textarea {
-      width: 100%;
-      border-radius: 8px;
-      border: 1px solid #ccc;
-      padding: 0.5rem;
-      font-size: 1rem;
-      resize: vertical;
-      min-height: 60px;
-    }
-    input[type="date"],
-    input[type="time"] {
-      width: 100%;
-      border-radius: 8px;
-      border: 1px solid #ccc;
-      padding: 0.45rem 0.5rem;
-      font-size: 1rem;
-      box-sizing: border-box;
-      font-family: inherit;
-    }
-    .input-row {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 0.6rem;
-      margin-top: 0.5rem;
-      align-items: end;
-    }
-    .field-label {
-      font-weight: 600;
-      font-size: 0.9rem;
-      margin-bottom: 0.25rem;
-      display: inline-block;
-    }
-    button {
-      font-family: inherit;
-    }
-    .primary-btn {
-      width: 100%;
-      margin-top: 0.5rem;
-      padding: 0.75rem;
-      border-radius: 999px;
-      border: none;
-      font-size: 1rem;
-      font-weight: 600;
-      background: #111827;
-      color: white;
-      cursor: pointer;
-    }
-    .primary-btn:disabled {
-      opacity: 0.6;
-      cursor: default;
-    }
-    .icon-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 999px;
-      border: 1px solid #e5e7eb;
-      background: #fff;
-      color: #6b7280;
-      display: inline-flex;
+      display: flex;
       align-items: center;
-      justify-content: center;
-      cursor: pointer;
-    }
-    .icon-btn:hover {
-      background: #f3f4f6;
-    }
-    .file-input {
-      width: 100%;
-      padding: 0.5rem;
-      border-radius: 8px;
-      border: 1px solid #ccc;
-      font-size: 0.95rem;
-      background: #fff;
-    }
-    .entries-list {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-    .entry {
-      padding: 0.5rem 0;
-      border-bottom: 1px solid #eee;
-      display: flex;
-      align-items: flex-start;
+      justify-content: space-between;
       gap: 0.5rem;
     }
-    .entry:last-child {
-      border-bottom: none;
-    }
-    .entry-content {
-      flex: 1;
-    }
-    .entry-main {
-      font-size: 0.95rem;
-      margin-bottom: 0.25rem;
-    }
-    .entry-meta {
-      font-size: 0.8rem;
-      opacity: 0.75;
-    }
-    .entry-empty {
-      display: block;
-      text-align: center;
-      opacity: 0.7;
-    }
-    .error {
-      color: #b91c1c;
-      font-size: 0.85rem;
-      margin-top: 0.5rem;
-    }
-    .small {
-      font-size: 0.75rem;
-      opacity: 0.7;
-      text-align: center;
-      margin-top: 0.5rem;
-    }
-    .mood-actions {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-      margin-top: 0.35rem;
-    }
-    .mood-actions button {
-      flex: 1;
-      min-width: 120px;
-      padding: 0.55rem 0.75rem;
-      border-radius: 10px;
-      border: 1px solid #e5e7eb;
-      background: #fff;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .mood-actions button.primary {
-      background: #111827;
-      color: #fff;
-      border-color: #111827;
-    }
-    .mood-actions button.primary:hover {
-      background: #0b1220;
-    }
-    .mood-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
-      gap: 0.35rem;
-      margin: 0.5rem 0;
-    }
-    .mood-btn {
-      padding: 0.5rem 0.65rem;
-      border-radius: 10px;
-      border: 1px solid #e5e7eb;
-      background: #fff;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .mood-btn.active {
-      background: #111827;
-      color: #fff;
-      border-color: #111827;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.12);
-    }
-    .mood-note {
-      width: 100%;
-      border-radius: 8px;
-      border: 1px solid #ccc;
-      padding: 0.45rem 0.5rem;
-      font-size: 0.95rem;
-      box-sizing: border-box;
-    }
+    .tab-panels > .panel { display: none; }
+    .tab-panels > .panel.active { display: block; }
   </style>
 </head>
 <body>
-  <header style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem;">
-    <h1 style="margin:0;display:flex;align-items:center;gap:0.4rem;"><i class="fa-solid fa-fire-burner"></i> Calorie Tracker</h1>
-    <nav style="display:flex;gap:0.5rem;font-size:0.95rem;">
-      <a href="/static/index.html" class="nav-btn"><i class="fa-solid fa-bolt"></i> Today</a>
-      <a href="/static/history.html" class="nav-btn"><i class="fa-solid fa-clock-rotate-left"></i> History</a>
-      <a href="/static/notes.html" class="nav-btn"><i class="fa-solid fa-note-sticky"></i> Notes</a>
-    </nav>
-  </header>
+  <div class="shell">
+    <header class="header">
+      <h1 style="margin:0;display:flex;align-items:center;gap:0.45rem;"><i class="fa-solid fa-fire-burner"></i> Calorie Tracker</h1>
+      <nav class="nav">
+        <a href="/static/index.html" class="nav-btn"><i class="fa-solid fa-bolt"></i> Today</a>
+        <a href="/static/history.html" class="nav-btn"><i class="fa-solid fa-clock-rotate-left"></i> History</a>
+        <a href="/static/notes.html" class="nav-btn"><i class="fa-solid fa-note-sticky"></i> Notes</a>
+      </nav>
+    </header>
 
-  <div class="card">
-    <h2>Today</h2>
-    <div class="stats-grid" id="today-stats"></div>
-  </div>
-
-  <div class="card">
-    <h2>Last 7 Days (avg macros, alcohol total)</h2>
-    <div class="stats-grid" id="last7-stats"></div>
-  </div>
-
-  <div class="card">
-    <h2>Alcohol (last 30 days)</h2>
-    <div class="stats-grid" id="last30-alcohol"></div>
-  </div>
-
-  <div class="card">
-    <h2>Today's mood</h2>
-    <div id="today-mood-display" style="margin-bottom:0.5rem;font-weight:600;"></div>
-    <div>
-      <span class="field-label">Mood (1 = low, 10 = high)</span>
-      <div class="mood-grid" id="today-mood-grid">
-        <button type="button" class="mood-btn" data-mood-btn="1">1</button>
-        <button type="button" class="mood-btn" data-mood-btn="2">2</button>
-        <button type="button" class="mood-btn" data-mood-btn="3">3</button>
-        <button type="button" class="mood-btn" data-mood-btn="4">4</button>
-        <button type="button" class="mood-btn" data-mood-btn="5">5</button>
-        <button type="button" class="mood-btn" data-mood-btn="6">6</button>
-        <button type="button" class="mood-btn" data-mood-btn="7">7</button>
-        <button type="button" class="mood-btn" data-mood-btn="8">8</button>
-        <button type="button" class="mood-btn" data-mood-btn="9">9</button>
-        <button type="button" class="mood-btn" data-mood-btn="10">10</button>
+    <div class="card">
+      <h2><i class="fa-solid fa-gauge-high"></i> At a glance</h2>
+      <div class="glance" id="glance">
+        <div class="glance-pill"><div class="glance-title">Calories</div><div class="glance-value">—</div></div>
+        <div class="glance-pill"><div class="glance-title">Protein</div><div class="glance-value">—</div></div>
+        <div class="glance-pill"><div class="glance-title">Alcohol</div><div class="glance-value">—</div></div>
+        <div class="glance-pill"><div class="glance-title">Mood</div><div class="glance-value">—</div></div>
       </div>
     </div>
-    <div style="margin-top:0.35rem;">
-      <span class="field-label">Note (optional)</span>
-      <input id="today-mood-note" class="mood-note" type="text" placeholder="Short note" />
-    </div>
-    <div class="mood-actions">
-      <button class="primary" id="today-save-mood" type="button">Save mood</button>
-      <button id="today-clear-mood" type="button">Clear</button>
-    </div>
-  </div>
 
-  <div class="card">
-    <h2>Add food</h2>
-    <textarea id="food-input" placeholder="e.g. 2 slices of toast with butter, 1 latte with skimmed milk"></textarea>
-    <div class="input-row" id="entry-datetime-row">
+    <div class="card">
+      <h2><i class="fa-solid fa-calendar-day"></i> Today</h2>
+      <div class="stats-grid" id="today-stats"></div>
+    </div>
+
+    <div class="card">
+      <h2><i class="fa-solid fa-chart-line"></i> Last 7 Days (avg macros, alcohol total)</h2>
+      <div class="stats-grid" id="last7-stats"></div>
+    </div>
+
+    <div class="card">
+      <h2><i class="fa-solid fa-wine-bottle"></i> Alcohol (last 30 days)</h2>
+      <div class="stats-grid" id="last30-alcohol"></div>
+    </div>
+
+    <div class="card">
+      <h2><i class="fa-solid fa-face-smile"></i> Today's mood</h2>
+      <div id="today-mood-display" class="mood-banner">No mood logged today.</div>
       <div>
-        <label class="field-label" for="entry-date">Date</label>
-        <input type="date" id="entry-date" />
+        <span class="field-label">Mood (1 = low, 10 = high)</span>
+        <div class="mood-grid" id="today-mood-grid">
+          <button type="button" class="mood-btn" data-mood-btn="1">1</button>
+          <button type="button" class="mood-btn" data-mood-btn="2">2</button>
+          <button type="button" class="mood-btn" data-mood-btn="3">3</button>
+          <button type="button" class="mood-btn" data-mood-btn="4">4</button>
+          <button type="button" class="mood-btn" data-mood-btn="5">5</button>
+          <button type="button" class="mood-btn" data-mood-btn="6">6</button>
+          <button type="button" class="mood-btn" data-mood-btn="7">7</button>
+          <button type="button" class="mood-btn" data-mood-btn="8">8</button>
+          <button type="button" class="mood-btn" data-mood-btn="9">9</button>
+          <button type="button" class="mood-btn" data-mood-btn="10">10</button>
+        </div>
       </div>
-      <div>
-        <label class="field-label" for="entry-time">Time</label>
-        <input type="time" id="entry-time" />
+      <div style="margin-top:0.35rem;">
+        <span class="field-label">Note (optional)</span>
+        <input id="today-mood-note" class="mood-note" type="text" placeholder="Short note" />
+      </div>
+      <div class="mood-actions">
+        <button class="primary" id="today-save-mood" type="button">Save mood</button>
+        <button id="today-clear-mood" type="button">Clear</button>
       </div>
     </div>
-    <button id="add-btn" class="primary-btn">Add</button>
-    <div class="error" id="error"></div>
-  </div>
 
-  <div class="card">
-    <h2>Add from photo</h2>
-    <input type="file" id="photo-input" class="file-input" accept="image/*" capture="environment" />
-    <button id="upload-btn" class="primary-btn">Upload photo</button>
-    <div class="small" style="margin-top:0.35rem;">We’ll send the image to the model along with your notes to estimate macros.</div>
-  </div>
+    <div class="card">
+      <h2><i class="fa-solid fa-plus-circle"></i> Add entry</h2>
+      <div class="tabs" id="entry-tabs">
+        <button class="tab-btn active" data-tab-target="text-tab" type="button">Type it</button>
+        <button class="tab-btn" data-tab-target="photo-tab" type="button">Photo</button>
+      </div>
+      <div class="tab-panels">
+        <div class="panel active" id="text-tab">
+          <span class="field-label">What did you have?</span>
+          <textarea id="food-input" placeholder="E.g. 1 chicken wrap, handful of chips, black coffee"></textarea>
+          <div class="input-row" id="entry-datetime-row">
+            <div>
+              <label class="field-label" for="entry-date">Date</label>
+              <input type="date" id="entry-date" />
+            </div>
+            <div>
+              <label class="field-label" for="entry-time">Time</label>
+              <input type="time" id="entry-time" />
+            </div>
+          </div>
+          <button id="add-btn" class="primary-btn">Add</button>
+        </div>
+        <div class="panel" id="photo-tab">
+          <span class="field-label">Upload a photo</span>
+          <input type="file" id="photo-input" class="file-input" accept="image/*" capture="environment" />
+          <div class="input-row" style="margin-top:0.6rem;">
+            <div>
+              <label class="field-label" for="entry-date-photo">Date</label>
+              <input type="date" id="entry-date-photo" />
+            </div>
+            <div>
+              <label class="field-label" for="entry-time-photo">Time</label>
+              <input type="time" id="entry-time-photo" />
+            </div>
+          </div>
+          <button id="upload-btn" class="primary-btn" style="margin-top:0.7rem;">Upload photo</button>
+          <div class="small" style="margin-top:0.35rem;">We’ll send the image to the model along with your notes to estimate macros.</div>
+        </div>
+      </div>
+      <div class="error" id="error"></div>
+    </div>
 
-  <div class="card">
-    <h2>Today’s entries</h2>
-    <ul class="entries-list" id="entries"></ul>
+    <div class="card">
+      <h2><i class="fa-solid fa-list"></i> Today’s entries</h2>
+      <ul class="entries-list" id="entries"></ul>
+    </div>
   </div>
 
   <script>
@@ -320,9 +142,12 @@
     const last7StatsEl = document.getElementById("last7-stats");
     const last30AlcoholEl = document.getElementById("last30-alcohol");
     const entriesEl = document.getElementById("entries");
+    const glanceEl = document.getElementById("glance");
     const foodInput = document.getElementById("food-input");
     let dateInput = document.getElementById("entry-date");
     let timeInput = document.getElementById("entry-time");
+    let dateInputPhoto = document.getElementById("entry-date-photo");
+    let timeInputPhoto = document.getElementById("entry-time-photo");
     const addBtn = document.getElementById("add-btn");
     const photoInput = document.getElementById("photo-input");
     const uploadBtn = document.getElementById("upload-btn");
@@ -332,32 +157,26 @@
     const todayMoodNote = document.getElementById("today-mood-note");
     const todaySaveMoodBtn = document.getElementById("today-save-mood");
     const todayClearMoodBtn = document.getElementById("today-clear-mood");
+    const tabButtons = Array.from(document.querySelectorAll(".tab-btn"));
+    const tabPanels = document.querySelectorAll(".tab-panels .panel");
     let todayMoodSelection = null;
-    let hasForcedReload = false;
+    let latestDashboard = null;
 
     function forceFreshLoad(reason) {
-      if (hasForcedReload) return;
-      hasForcedReload = true;
       location.reload();
     }
-
-    window.addEventListener("pageshow", (e) => {
-      if (e.persisted) forceFreshLoad("pageshow");
-    });
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) forceFreshLoad("visibilitychange");
-    });
+    window.addEventListener("pageshow", (e) => { if (e.persisted) forceFreshLoad("pageshow"); });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) forceFreshLoad("visibilitychange"); });
 
     function initDateTime() {
-      // Re-query in case of bfcache/nav returning this page
-      dateInput = document.getElementById("entry-date");
-      timeInput = document.getElementById("entry-time");
-      if (!dateInput || !timeInput) return;
       const now = new Date();
-      dateInput.value = now.toISOString().slice(0, 10);
+      const isoDate = now.toISOString().slice(0, 10);
       const hours = now.getHours().toString().padStart(2, "0");
       const minutes = now.getMinutes().toString().padStart(2, "0");
-      timeInput.value = `${hours}:${minutes}`;
+      if (dateInput) dateInput.value = isoDate;
+      if (timeInput) timeInput.value = `${hours}:${minutes}`;
+      if (dateInputPhoto) dateInputPhoto.value = isoDate;
+      if (timeInputPhoto) timeInputPhoto.value = `${hours}:${minutes}`;
     }
 
     function renderStats(container, stats, { averageMacros = false, alcoholIsTotal = false } = {}) {
@@ -387,84 +206,19 @@
       `;
     }
 
-    function setTodayMoodSelection(score) {
-      todayMoodSelection = score;
-      todayMoodButtons.forEach((btn) => {
-        const val = Number(btn.getAttribute("data-mood-btn"));
-        btn.classList.toggle("active", val === score);
-      });
-    }
-
-    function renderTodayMood(mood) {
-      if (!mood) {
-        todayMoodDisplay.textContent = "No mood logged today.";
-        setTodayMoodSelection(null);
-        todayMoodNote.value = "";
-        return;
-      }
-      todayMoodDisplay.textContent = `Mood: ${mood.mood_score}/10${mood.mood_note ? " — " + mood.mood_note : ""}`;
-      setTodayMoodSelection(mood.mood_score);
-      todayMoodNote.value = mood.mood_note || "";
-    }
-
-    async function loadTodayMood() {
-      try {
-        const res = await fetch("/api/mood");
-        if (!res.ok) throw new Error("Failed to load mood");
-        const data = await res.json();
-        renderTodayMood(data);
-      } catch (err) {
-        todayMoodDisplay.textContent = err.message;
-      }
-    }
-
-    async function saveTodayMood() {
-      if (!todayMoodSelection) {
-        errorEl.textContent = "Select a mood score (1-10).";
-        return;
-      }
-      errorEl.textContent = "";
-      todaySaveMoodBtn.disabled = true;
-      try {
-        const res = await fetch("/api/mood", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            date: new Date().toISOString().slice(0, 10),
-            mood_score: todayMoodSelection,
-            mood_note: todayMoodNote.value.trim() || null,
-          }),
-        });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.detail || "Failed to save mood");
-        }
-        const data = await res.json();
-        renderTodayMood(data);
-      } catch (err) {
-        errorEl.textContent = err.message;
-      } finally {
-        todaySaveMoodBtn.disabled = false;
-      }
-    }
-
-    async function clearTodayMood() {
-      todayClearMoodBtn.disabled = true;
-      errorEl.textContent = "";
-      try {
-        const res = await fetch(`/api/mood?day=${encodeURIComponent(new Date().toISOString().slice(0, 10))}`, { method: "DELETE" });
-        if (!res.ok && res.status !== 204) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.detail || "Failed to clear mood");
-        }
-        setTodayMoodSelection(null);
-        todayMoodNote.value = "";
-        todayMoodDisplay.textContent = "No mood logged today.";
-      } catch (err) {
-        errorEl.textContent = err.message;
-      } finally {
-        todayClearMoodBtn.disabled = false;
-      }
+    function renderGlance(todayStats, last30Alcohol, moodValue) {
+      const pills = [
+        { title: "Calories", value: `${todayStats.total_calories.toFixed(0)} kcal` },
+        { title: "Protein", value: `${todayStats.total_protein.toFixed(1)} g` },
+        { title: "Alcohol", value: `${last30Alcohol.toFixed(1)} u (30d)` },
+        { title: "Mood", value: moodValue ? `${moodValue}/10` : "—" },
+      ];
+      glanceEl.innerHTML = pills.map(p => `
+        <div class="glance-pill">
+          <div class="glance-title">${p.title}</div>
+          <div class="glance-value">${p.value}</div>
+        </div>
+      `).join("");
     }
 
     function renderEntries(entries) {
@@ -494,6 +248,7 @@
     }
 
     function updateUI(data) {
+      latestDashboard = data;
       renderStats(todayStatsEl, data.today_stats);
       renderStats(last7StatsEl, data.last7_stats, { averageMacros: true, alcoholIsTotal: true });
       last30AlcoholEl.innerHTML = `
@@ -503,6 +258,7 @@
         </div>
       `;
       renderEntries(data.today_entries);
+      renderGlance(data.today_stats, data.last30_alcohol_units, todayMoodSelection);
     }
 
     async function loadDashboard() {
@@ -566,8 +322,8 @@
         errorEl.textContent = "Pick a photo first.";
         return;
       }
-      const dateVal = dateInput.value;
-      const timeVal = timeInput.value;
+      const dateVal = dateInputPhoto.value;
+      const timeVal = timeInputPhoto.value;
       if (!dateVal || !timeVal) {
         errorEl.textContent = "Pick a date and time.";
         return;
@@ -620,11 +376,94 @@
       }
     }
 
+    function setTodayMoodSelection(score) {
+      todayMoodSelection = score;
+      todayMoodButtons.forEach((btn) => {
+        const val = Number(btn.getAttribute("data-mood-btn"));
+        btn.classList.toggle("active", val === score);
+      });
+    }
+
+    function renderTodayMood(mood) {
+      if (!mood) {
+        todayMoodDisplay.textContent = "No mood logged today.";
+        setTodayMoodSelection(null);
+        todayMoodNote.value = "";
+        return;
+      }
+      todayMoodDisplay.textContent = `Mood: ${mood.mood_score}/10${mood.mood_note ? " — " + mood.mood_note : ""}`;
+      setTodayMoodSelection(mood.mood_score);
+      todayMoodNote.value = mood.mood_note || "";
+      if (latestDashboard) {
+        renderGlance(latestDashboard.today_stats, latestDashboard.last30_alcohol_units, mood.mood_score);
+      }
+    }
+
+    async function loadTodayMood() {
+      try {
+        const res = await fetch("/api/mood");
+        if (!res.ok) throw new Error("Failed to load mood");
+        const data = await res.json();
+        renderTodayMood(data);
+      } catch (err) {
+        todayMoodDisplay.textContent = err.message;
+      }
+    }
+
+    async function saveTodayMood() {
+      if (!todayMoodSelection) {
+        errorEl.textContent = "Select a mood score (1-10).";
+        return;
+      }
+      errorEl.textContent = "";
+      todaySaveMoodBtn.disabled = true;
+      try {
+        const res = await fetch("/api/mood", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: new Date().toISOString().slice(0, 10),
+            mood_score: todayMoodSelection,
+            mood_note: todayMoodNote.value.trim() || null,
+          }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to save mood");
+        }
+        const data = await res.json();
+        renderTodayMood(data);
+        loadDashboard();
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        todaySaveMoodBtn.disabled = false;
+      }
+    }
+
+    async function clearTodayMood() {
+      todayClearMoodBtn.disabled = true;
+      errorEl.textContent = "";
+      try {
+        const res = await fetch(`/api/mood?day=${encodeURIComponent(new Date().toISOString().slice(0, 10))}`, { method: "DELETE" });
+        if (!res.ok && res.status !== 204) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to clear mood");
+        }
+        setTodayMoodSelection(null);
+        todayMoodNote.value = "";
+        todayMoodDisplay.textContent = "No mood logged today.";
+        loadDashboard();
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        todayClearMoodBtn.disabled = false;
+      }
+    }
+
     addBtn.addEventListener("click", addEntry);
     foodInput.addEventListener("keydown", (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        addEntry();
-      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") addEntry();
     });
     uploadBtn.addEventListener("click", uploadPhoto);
     entriesEl.addEventListener("click", (e) => {
@@ -640,6 +479,14 @@
     });
     todaySaveMoodBtn.addEventListener("click", saveTodayMood);
     todayClearMoodBtn.addEventListener("click", clearTodayMood);
+
+    tabButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const target = btn.getAttribute("data-tab-target");
+        tabButtons.forEach(b => b.classList.toggle("active", b === btn));
+        tabPanels.forEach(panel => panel.classList.toggle("active", panel.id === target));
+      });
+    });
 
     initDateTime();
     window.addEventListener("pageshow", initDateTime);
