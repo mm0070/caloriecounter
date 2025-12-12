@@ -166,7 +166,7 @@ a { color: inherit; }
 
 .input-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 0.6rem;
   margin-top: 0.5rem;
   align-items: end;
@@ -187,6 +187,10 @@ select {
   box-sizing: border-box;
   background: #0b1529;
   color: var(--text);
+}
+.input-row input[type="date"],
+.input-row input[type="time"] {
+  min-width: 0;
 }
 
 .field-label {
@@ -249,6 +253,7 @@ select {
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.5rem;
   margin-top: 0.75rem;
+  overflow-x: auto;
 }
 .day-cell {
   background: #0b1529;
@@ -278,6 +283,10 @@ select {
   flex-wrap: wrap;
   margin-top: 0.25rem;
   font-size: 0.85rem;
+}
+.calendar .badge {
+  max-width: 100%;
+  white-space: normal;
 }
 .calendar-header {
   display: flex;
@@ -433,4 +442,20 @@ select {
   .header { flex-direction: column; align-items: flex-start; }
   body { padding: 0.85rem; }
   .calendar { gap: 0.35rem; }
+}
+
+@media (max-width: 520px) {
+  .input-row {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.5rem;
+  }
+  .calendar {
+    grid-template-columns: repeat(7, minmax(80px, 1fr));
+    width: 100%;
+    min-width: 560px;
+  }
+  .day-cell { padding: 0.35rem 0.4rem; }
+  .day-label { font-size: 0.85rem; }
+  .badge { font-size: 0.72rem; }
+  .legend { font-size: 0.78rem; }
 }
