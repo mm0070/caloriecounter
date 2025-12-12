@@ -253,7 +253,6 @@ select {
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.5rem;
   margin-top: 0.75rem;
-  overflow-x: auto;
 }
 .day-cell {
   background: #0b1529;
@@ -265,6 +264,8 @@ select {
   flex-direction: column;
   gap: 0.2rem;
   cursor: pointer;
+  overflow: hidden;
+  overflow-wrap: anywhere;
   transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
 }
 .day-cell:hover {
@@ -287,6 +288,7 @@ select {
 .calendar .badge {
   max-width: 100%;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 .calendar-header {
   display: flex;
@@ -446,13 +448,12 @@ select {
 
 @media (max-width: 520px) {
   .input-row {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    grid-template-columns: 1fr;
     gap: 0.5rem;
   }
   .calendar {
-    grid-template-columns: repeat(7, minmax(80px, 1fr));
-    width: 100%;
-    min-width: 560px;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.3rem;
   }
   .day-cell { padding: 0.35rem 0.4rem; }
   .day-label { font-size: 0.85rem; }
