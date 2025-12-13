@@ -191,6 +191,9 @@ select {
 .input-row input[type="date"],
 .input-row input[type="time"] {
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  display: block;
 }
 
 .field-label {
@@ -444,15 +447,15 @@ select {
   .header { flex-direction: column; align-items: flex-start; }
   body { padding: 0.85rem; }
   .calendar { gap: 0.35rem; }
-}
-
-@media (max-width: 520px) {
   .input-row {
     grid-template-columns: 1fr;
     gap: 0.5rem;
   }
+}
+
+@media (max-width: 520px) {
   .calendar {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 0.3rem;
   }
   .day-cell { padding: 0.35rem 0.4rem; }

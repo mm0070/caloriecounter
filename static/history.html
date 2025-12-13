@@ -131,6 +131,7 @@
     let caloriesChart = null;
     let proteinChart = null;
     let moodChart = null;
+    const calendarMediaQuery = window.matchMedia("(max-width: 520px)");
 
     function forceFreshLoad(reason) {
       if (hasForcedReload) return;
@@ -143,6 +144,9 @@
     });
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) forceFreshLoad("visibilitychange");
+    });
+    calendarMediaQuery.addEventListener("change", () => {
+      loadCalendar();
     });
 
     function formatDateInput(dt) {
@@ -306,43 +310,90 @@
       moodNoteInput.value = mood.mood_note || "";
     }
 
+    function startOfWeek(dt) {
+      const d = new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()));
+      const day = d.getUTCDay(); // 0..6, Sun start
+      d.setUTCDate(d.getUTCDate() - day);
+      return d;
+    }
+
+    function isMobileCalendar() {
+      return window.matchMedia("(max-width: 520px)").matches;
+    }
+
     function renderCalendar(monthStr) {
       calendarEl.innerHTML = "";
       if (!monthStr) return;
-      const [year, month] = monthStr.split("-").map(Number);
-      const firstDay = new Date(year, month - 1, 1);
-      const startWeekday = firstDay.getDay(); // 0 Sun..6 Sat
-      const daysInMonth = new Date(year, month, 0).getDate();
-      const cells = [];
-      for (let i = 0; i < startWeekday; i++) {
-        cells.push('<div></div>');
-      }
       const dataMap = new Map(calendarData.map(d => [d.date, d]));
-      for (let day = 1; day <= daysInMonth; day++) {
-        const dateStr = `${year}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
-        const data = dataMap.get(dateStr);
-        const badges = [];
-        let moodStyle = "";
-        if (data?.mood_score) {
-          const bg = computeMoodColor(data.mood_score);
-          badges.push(`<span class="badge mood" style="background:${bg};color:#0b1220;"><i class="fa-solid fa-face-smile"></i> Mood ${data.mood_score}</span>`);
-          moodStyle = `style="background:${bg};"`;
+
+      const cells = [];
+      if (isMobileCalendar()) {
+        const anchor = new Date(monthStr);
+        const weekStart = startOfWeek(anchor);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+        for (let i = 0; i < 7; i++) {
+          const cur = new Date(weekStart);
+          cur.setUTCDate(weekStart.getUTCDate() + i);
+          const dateStr = cur.toISOString().slice(0, 10);
+          const data = dataMap.get(dateStr);
+          const badges = [];
+          let moodStyle = "";
+          if (data?.mood_score) {
+            const bg = computeMoodColor(data.mood_score);
+            badges.push(`<span class="badge mood" style="background:${bg};color:#0b1220;"><i class="fa-solid fa-face-smile"></i> Mood ${data.mood_score}</span>`);
+            moodStyle = `style="background:${bg};"`;
+          }
+          if (data?.total_alcohol_units > 0) {
+            badges.push('<span class="badge alcohol"><i class="fa-solid fa-wine-bottle"></i> Alc</span>');
+          }
+          if ((data?.total_protein || 0) >= 150) {
+            badges.push('<span class="badge protein"><i class="fa-solid fa-dumbbell"></i> Protein</span>');
+          }
+          if ((data?.total_calories || 0) > 2800) {
+            badges.push('<span class="badge calories"><i class="fa-solid fa-fire"></i> 2800+</span>');
+          }
+          cells.push(`
+            <div class="day-cell" data-date="${dateStr}" ${moodStyle}>
+              <div class="day-label">${cur.getUTCMonth() + 1}/${cur.getUTCDate()}</div>
+              ${badges.join("")}
+            </div>
+          `);
         }
-        if (data?.total_alcohol_units > 0) {
-          badges.push('<span class="badge alcohol"><i class="fa-solid fa-wine-bottle"></i> Alc</span>');
+      } else {
+        const [year, month] = monthStr.split("-").map(Number);
+        const firstDay = new Date(year, month - 1, 1);
+        const startWeekday = firstDay.getDay(); // 0 Sun..6 Sat
+        const daysInMonth = new Date(year, month, 0).getDate();
+        for (let i = 0; i < startWeekday; i++) {
+          cells.push('<div></div>');
         }
-        if ((data?.total_protein || 0) >= 150) {
-          badges.push('<span class="badge protein"><i class="fa-solid fa-dumbbell"></i> Protein</span>');
+        for (let day = 1; day <= daysInMonth; day++) {
+          const dateStr = `${year}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+          const data = dataMap.get(dateStr);
+          const badges = [];
+          let moodStyle = "";
+          if (data?.mood_score) {
+            const bg = computeMoodColor(data.mood_score);
+            badges.push(`<span class="badge mood" style="background:${bg};color:#0b1220;"><i class="fa-solid fa-face-smile"></i> Mood ${data.mood_score}</span>`);
+            moodStyle = `style="background:${bg};"`;
+          }
+          if (data?.total_alcohol_units > 0) {
+            badges.push('<span class="badge alcohol"><i class="fa-solid fa-wine-bottle"></i> Alc</span>');
+          }
+          if ((data?.total_protein || 0) >= 150) {
+            badges.push('<span class="badge protein"><i class="fa-solid fa-dumbbell"></i> Protein</span>');
+          }
+          if ((data?.total_calories || 0) > 2800) {
+            badges.push('<span class="badge calories"><i class="fa-solid fa-fire"></i> 2800+</span>');
+          }
+          cells.push(`
+            <div class="day-cell" data-date="${dateStr}" ${moodStyle}>
+              <div class="day-label">${day}</div>
+              ${badges.join("")}
+            </div>
+          `);
         }
-        if ((data?.total_calories || 0) > 2800) {
-          badges.push('<span class="badge calories"><i class="fa-solid fa-fire"></i> 2800+</span>');
-        }
-        cells.push(`
-          <div class="day-cell" data-date="${dateStr}" ${moodStyle}>
-            <div class="day-label">${day}</div>
-            ${badges.join("")}
-          </div>
-        `);
       }
       calendarEl.innerHTML = cells.join("");
     }
@@ -449,22 +500,41 @@
     }
 
     function updateMonthLabel() {
-      const formatter = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
-      monthLabel.textContent = formatter.format(calendarMonth);
+      if (isMobileCalendar()) {
+        const weekStart = startOfWeek(calendarMonth);
+        const label = `Week of ${weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+        monthLabel.textContent = label;
+      } else {
+        const formatter = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+        monthLabel.textContent = formatter.format(calendarMonth);
+      }
     }
 
     async function loadCalendar() {
       setError("");
-      const month = formatMonth(calendarMonth);
+      const monthsToFetch = [];
+      if (isMobileCalendar()) {
+        const weekStart = startOfWeek(calendarMonth);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+        monthsToFetch.push(formatMonth(weekStart));
+        monthsToFetch.push(formatMonth(weekEnd));
+      } else {
+        monthsToFetch.push(formatMonth(calendarMonth));
+      }
+      const uniqueMonths = [...new Set(monthsToFetch)];
       updateMonthLabel();
       try {
-        const res = await fetch(`/api/calendar?month=${encodeURIComponent(month)}`);
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.detail || "Failed to load calendar");
-        }
-        calendarData = await res.json();
-        renderCalendar(month);
+        const responses = await Promise.all(uniqueMonths.map(async (m) => {
+          const res = await fetch(`/api/calendar?month=${encodeURIComponent(m)}`);
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || "Failed to load calendar");
+          }
+          return res.json();
+        }));
+        calendarData = responses.flat();
+        renderCalendar(calendarMonth.toISOString().slice(0, 10));
       } catch (err) {
         setError(err.message);
       }
@@ -612,7 +682,11 @@
     });
 
     function changeMonth(delta) {
-      calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + delta, 1);
+      if (isMobileCalendar()) {
+        calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), calendarMonth.getDate() + delta * 7);
+      } else {
+        calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + delta, 1);
+      }
       loadCalendar();
     }
 
@@ -661,6 +735,10 @@
       const dateStr = cell.getAttribute("data-date");
       dayInput.value = dateStr;
       loadDay(dateStr);
+      if (isMobileCalendar()) {
+        calendarMonth = new Date(dateStr);
+        loadCalendar();
+      }
     });
 
     loadCalendar();
