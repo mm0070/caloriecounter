@@ -426,6 +426,12 @@
         const calories = series.map((p) => p.calories || 0);
         const protein = series.map((p) => p.protein || 0);
         const moods = series.map((p) => p.mood_score ?? null);
+        const calorieColors = calories.map((v) =>
+          v > 2800 ? "rgba(248, 113, 113, 0.85)" : "rgba(34, 197, 94, 0.85)"
+        );
+        const proteinColors = protein.map((v) =>
+          v >= 150 ? "rgba(34, 197, 94, 0.85)" : "rgba(248, 113, 113, 0.85)"
+        );
 
         const commonOptions = {
           responsive: true,
@@ -446,7 +452,8 @@
               {
                 label: "Calories",
                 data: calories,
-                backgroundColor: "rgba(248, 113, 113, 0.7)",
+                backgroundColor: calorieColors,
+                borderColor: calorieColors.map((c) => c.replace("0.85", "1")),
                 borderRadius: 6,
               },
             ],
@@ -463,7 +470,8 @@
               {
                 label: "Protein (g)",
                 data: protein,
-                backgroundColor: "rgba(34, 197, 94, 0.7)",
+                backgroundColor: proteinColors,
+                borderColor: proteinColors.map((c) => c.replace("0.85", "1")),
                 borderRadius: 6,
               },
             ],
