@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from unittest.mock import patch
 
 from sqlalchemy import create_engine
@@ -85,6 +85,38 @@ class StatsTests(unittest.TestCase):
         self.assertEqual(stats.total_carbs, 0.0)
         self.assertEqual(stats.total_fat, 0.0)
         self.assertEqual(stats.total_alcohol_units, 0.0)
+
+    def test_days_since_last_alcohol_none_when_no_entries(self):
+        self.assertIsNone(main.get_days_since_last_alcohol(self.db))
+
+    def test_days_since_last_alcohol_counts_latest_entry(self):
+        now = datetime.now(timezone.utc)
+        entries = [
+            main.Entry(
+                ts=now - timedelta(days=4),
+                description="Earlier drink",
+                calories=0,
+                protein=0,
+                carbs=0,
+                fat=0,
+                alcohol_units=1.0,
+                raw_response="",
+            ),
+            main.Entry(
+                ts=now - timedelta(days=2, hours=6),
+                description="Latest drink",
+                calories=0,
+                protein=0,
+                carbs=0,
+                fat=0,
+                alcohol_units=2.0,
+                raw_response="",
+            ),
+        ]
+        self.db.add_all(entries)
+        self.db.commit()
+
+        self.assertEqual(main.get_days_since_last_alcohol(self.db), 2)
 
 
 if __name__ == "__main__":

@@ -146,6 +146,7 @@ class DashboardOut(BaseModel):
     today_stats: StatsOut
     last7_stats: StatsOut
     last30_alcohol_units: float
+    days_since_last_alcohol: int | None = None
     today_entries: list[EntryOut]
 
 
@@ -220,6 +221,24 @@ def get_last30_range():
     start_utc = start.astimezone(timezone.utc) if start.tzinfo else start.replace(tzinfo=timezone.utc)
     end_utc = end.astimezone(timezone.utc) if end.tzinfo else end.replace(tzinfo=timezone.utc)
     return start_utc, end_utc
+
+
+def get_days_since_last_alcohol(db: Session) -> int | None:
+    last_alcohol_entry = (
+        db.query(Entry)
+        .filter(Entry.alcohol_units > 0)
+        .order_by(Entry.ts.desc())
+        .first()
+    )
+    if not last_alcohol_entry:
+        return None
+
+    last_ts = last_alcohol_entry.ts
+    if last_ts.tzinfo is None:
+        last_ts = last_ts.replace(tzinfo=timezone.utc)
+    last_date = last_ts.astimezone(timezone.utc).date()
+    today = datetime.now(timezone.utc).date()
+    return max((today - last_date).days, 0)
 
 
 def empty_stats() -> StatsOut:
@@ -452,6 +471,7 @@ def get_dashboard(db: Session) -> DashboardOut:
         total_alcohol_units=last7_total.total_alcohol_units,
     )
     last30_stats = aggregate_stats(db, last30_start, last30_end)
+    days_since_last_alcohol = get_days_since_last_alcohol(db)
 
     today_entries = (
         db.query(Entry)
@@ -478,6 +498,7 @@ def get_dashboard(db: Session) -> DashboardOut:
         today_stats=today_stats,
         last7_stats=last7_stats,
         last30_alcohol_units=last30_stats.total_alcohol_units,
+        days_since_last_alcohol=days_since_last_alcohol,
         today_entries=entries_out,
     )
 

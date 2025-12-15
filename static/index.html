@@ -206,6 +206,12 @@
       `;
     }
 
+    function formatDaysSinceAlcohol(days) {
+      if (days === null || days === undefined) return "No alcohol logged";
+      if (days === 0) return "today";
+      return `${days} day${days === 1 ? "" : "s"} ago`;
+    }
+
     function renderGlance(todayStats, last30Alcohol, moodValue) {
       const pills = [
         { title: "Calories", value: `${todayStats.total_calories.toFixed(0)} kcal` },
@@ -255,6 +261,10 @@
         <div class="stat">
           <div class="stat-title">Alcohol units</div>
           <div class="stat-value">${data.last30_alcohol_units.toFixed(1)} units</div>
+        </div>
+        <div class="stat">
+          <div class="stat-title">Days since last alcohol</div>
+          <div class="stat-value">${formatDaysSinceAlcohol(data.days_since_last_alcohol)}</div>
         </div>
       `;
       renderEntries(data.today_entries);
