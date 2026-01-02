@@ -13,6 +13,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
 from openai import OpenAI
+from prompts import (
+    nutrition_image_prompt,
+    nutrition_text_prompt,
+    weekly_review_system_prompt,
+    weekly_review_user_prompt,
+)
 
 # ---------- Config ----------
 
@@ -175,6 +181,15 @@ class SeriesPoint(BaseModel):
     mood_score: int | None = None
 
 
+class WeeklyReviewOut(BaseModel):
+    review: str
+    generated_at: datetime
+    range_start: date
+    range_end: date
+    days_with_entries: int
+    total_entries: int
+
+
 # ---------- Helpers ----------
 
 def get_db() -> Session:
@@ -307,6 +322,134 @@ def average_stats_on_logged_days(db: Session, start: datetime, end: datetime) ->
     )
 
 
+def build_last7_review_context(db: Session):
+    start, end = get_last7_range()
+    # Stats per day
+    entry_rows = (
+        db.query(
+            func.date(Entry.ts),
+            func.coalesce(func.sum(Entry.calories), 0),
+            func.coalesce(func.sum(Entry.protein), 0),
+            func.coalesce(func.sum(Entry.carbs), 0),
+            func.coalesce(func.sum(Entry.fat), 0),
+            func.coalesce(func.sum(Entry.alcohol_units), 0),
+        )
+        .filter(Entry.ts >= start, Entry.ts < end)
+        .group_by(func.date(Entry.ts))
+        .all()
+    )
+    stats_map = {
+        date.fromisoformat(row[0]): {
+            "calories": float(row[1]),
+            "protein": float(row[2]),
+            "carbs": float(row[3]),
+            "fat": float(row[4]),
+            "alcohol": float(row[5]),
+        }
+        for row in entry_rows
+    }
+
+    total_entries = int(
+        db.query(func.count(Entry.id)).filter(Entry.ts >= start, Entry.ts < end).scalar() or 0
+    )
+    days_with_entries = len(stats_map)
+
+    mood_rows = db.query(Mood).filter(Mood.date >= start.date(), Mood.date < end.date()).all()
+    mood_map = {m.date: m for m in mood_rows}
+
+    days = [start.date() + timedelta(days=i) for i in range((end - start).days)]
+    daily_lines = []
+    for d in days:
+        stats = stats_map.get(d)
+        calories = stats["calories"] if stats else 0.0
+        protein = stats["protein"] if stats else 0.0
+        carbs = stats["carbs"] if stats else 0.0
+        fat = stats["fat"] if stats else 0.0
+        alcohol = stats["alcohol"] if stats else 0.0
+        mood = mood_map.get(d)
+        mood_part = f", Mood {mood.mood_score}/10" if mood else ""
+        suffix = "" if stats else " (no entries)"
+        daily_lines.append(
+            f"{d.isoformat()}: {calories:.0f} kcal, P {protein:.1f}g, C {carbs:.1f}g, F {fat:.1f}g, Alc {alcohol:.1f}u{mood_part}{suffix}"
+        )
+
+    avg_stats = average_stats_on_logged_days(db, start, end)
+    total_stats = aggregate_stats(db, start, end)
+
+    return {
+        "start": start,
+        "end": end,
+        "days": days,
+        "daily_lines": daily_lines,
+        "avg_stats": avg_stats,
+        "total_alcohol_units": total_stats.total_alcohol_units,
+        "days_with_entries": days_with_entries,
+        "total_entries": total_entries,
+    }
+
+
+def generate_last7_review(db: Session) -> WeeklyReviewOut:
+    context = build_last7_review_context(db)
+    start = context["start"]
+    end = context["end"]
+    range_start = context["days"][0] if context["days"] else start.date()
+    range_end = context["days"][-1] if context["days"] else (end - timedelta(days=1)).date()
+    if context["total_entries"] == 0:
+        return WeeklyReviewOut(
+            review="No entries in the last 7 completed days, so there is nothing to review yet.",
+            generated_at=datetime.now(timezone.utc),
+            range_start=range_start,
+            range_end=range_end,
+            days_with_entries=0,
+            total_entries=0,
+        )
+
+    daily_block = "\n".join(context["daily_lines"]) or "No daily data."
+    avg = context["avg_stats"]
+
+    user_prompt = weekly_review_user_prompt(
+        daily_block,
+        avg.total_calories,
+        avg.total_protein,
+        avg.total_carbs,
+        avg.total_fat,
+        context["total_alcohol_units"],
+        context["days_with_entries"],
+        context["total_entries"],
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            temperature=0.2,
+            messages=[
+                {
+                    "role": "system",
+                    "content": weekly_review_system_prompt(),
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
+            ],
+        )
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to generate weekly review")
+
+    review_text = (response.choices[0].message.content or "").strip()
+    if not review_text:
+        raise HTTPException(status_code=500, detail="Model returned empty review")
+
+    return WeeklyReviewOut(
+        review=review_text,
+        generated_at=datetime.now(timezone.utc),
+        range_start=range_start,
+        range_end=range_end,
+        days_with_entries=context["days_with_entries"],
+        total_entries=context["total_entries"],
+    )
+
+
 def note_to_out(note: Note) -> NoteOut:
     return NoteOut(
         id=note.id,
@@ -339,30 +482,7 @@ def notes_to_block(notes: list[Note]) -> str:
 def call_nutrition_model(text: str, notes: list[Note]) -> dict:
     note_block = notes_to_block(notes)
 
-    system_prompt = f"""
-You are a nutrition assistant.
-
-Given a description of everything a person ate or drank, estimate:
-- total calories (kcal)
-- total protein (g)
-- total carbohydrates (g)
-- total fat (g)
-- total alcohol units (UK units)
-
-If no alcohol is present, return 0 for alcohol_units.
-
-Return ONLY a JSON object with these keys:
-- "calories"
-- "protein_g"
-- "carbs_g"
-- "fat_g"
-- "alcohol_units"
-
-All values must be numbers, no units in the values.
-If something is unclear, make a reasonable estimate.
-If the user mentions items that look like these shorthands (even with minor typos), use the provided detail:
-{note_block}
-""".strip()
+    system_prompt = nutrition_text_prompt(note_block)
 
     response = client.chat.completions.create(
         model="gpt-4.1-mini",
@@ -395,33 +515,7 @@ def call_nutrition_model_image(image_bytes: bytes, content_type: str, notes: lis
 
     note_block = notes_to_block(notes)
 
-    system_prompt = f"""
-You are a nutrition assistant.
-
-Given a photo of everything a person ate or drank, estimate:
-- total calories (kcal)
-- total protein (g)
-- total carbohydrates (g)
-- total fat (g)
-- total alcohol units (UK units)
-
-Also provide a short human-readable description of what you see.
-
-If no alcohol is present, return 0 for alcohol_units.
-
-Return ONLY a JSON object with these keys:
-- "description"
-- "calories"
-- "protein_g"
-- "carbs_g"
-- "fat_g"
-- "alcohol_units"
-
-All values must be numbers for macros, no units in the values. Description is free text.
-If something is unclear, make a reasonable estimate.
-If the items resemble these shorthands (even with minor typos), use the provided detail:
-{note_block}
-""".strip()
+    system_prompt = nutrition_image_prompt(note_block)
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -719,6 +813,12 @@ async def delete_entry(entry_id: int):
 async def dashboard():
     db = next(get_db())
     return get_dashboard(db)
+
+
+@app.get("/api/review/last7", response_model=WeeklyReviewOut)
+async def last7_review():
+    db = next(get_db())
+    return generate_last7_review(db)
 
 
 @app.get("/api/day", response_model=DayOut)

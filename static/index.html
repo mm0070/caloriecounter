@@ -57,6 +57,17 @@
     </div>
 
     <div class="card">
+      <div class="card-header-row">
+        <h2><i class="fa-solid fa-message"></i> Weekly review</h2>
+        <button class="ghost-btn" id="refresh-review-btn" type="button"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+      </div>
+      <div class="review-box">
+        <div class="review-text" id="weekly-review-body">We’ll auto-generate a blunt recap of the last 7 completed days once per day.</div>
+      </div>
+      <div class="small" id="weekly-review-meta">Covers the last 7 completed days.</div>
+    </div>
+
+    <div class="card">
       <h2><i class="fa-solid fa-wine-bottle"></i> Alcohol (last 30 days)</h2>
       <div class="stats-grid" id="last30-alcohol"></div>
     </div>
@@ -159,6 +170,9 @@
     const todayClearMoodBtn = document.getElementById("today-clear-mood");
     const tabButtons = Array.from(document.querySelectorAll(".tab-btn"));
     const tabPanels = document.querySelectorAll(".tab-panels .panel");
+    const weeklyReviewBody = document.getElementById("weekly-review-body");
+    const weeklyReviewMeta = document.getElementById("weekly-review-meta");
+    const refreshReviewBtn = document.getElementById("refresh-review-btn");
     let todayMoodSelection = null;
     let latestDashboard = null;
 
@@ -167,6 +181,116 @@
     }
     window.addEventListener("pageshow", (e) => { if (e.persisted) forceFreshLoad("pageshow"); });
     document.addEventListener("visibilitychange", () => { if (!document.hidden) forceFreshLoad("visibilitychange"); });
+
+    const REVIEW_CACHE_KEY = "weeklyReviewCache";
+
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function parseWeeklyReviewSections(text) {
+      if (!text) return [];
+      const cleanWhitespace = (str) => (str || "").replace(/\s+/g, " ").trim();
+      const lines = text.split(/\n+/).map(l => cleanWhitespace(l)).filter(Boolean);
+      const sections = [];
+      let current = null;
+
+      const startSection = (title, bodyLine = "") => {
+        if (current) sections.push(current);
+        const cleanedBody = cleanWhitespace(bodyLine.replace(/^[\\s:.-]+/, ""));
+        current = { title, body: cleanedBody ? [cleanWhitespace(cleanedBody)] : [] };
+      };
+
+      lines.forEach((line) => {
+        const lower = line.toLowerCase();
+        if (lower.startsWith("summary")) {
+          const bodyPart = line.slice("summary".length);
+          startSection("Summary", bodyPart);
+          return;
+        }
+        if (lower.startsWith("what could be improved")) {
+          const bodyPart = line.slice("what could be improved".length);
+          startSection("What could be improved", bodyPart);
+          return;
+        }
+        if (lower.startsWith("what went well")) {
+          const bodyPart = line.slice("what went well".length);
+          startSection("What went well", bodyPart);
+          return;
+        }
+        if (current) {
+          current.body.push(cleanWhitespace(line));
+        }
+      });
+
+      if (current) sections.push(current);
+
+      return sections
+        .map((sec) => ({
+          title: sec.title,
+          body: cleanWhitespace(sec.body.join(" ")),
+        }))
+        .filter(sec => sec.title);
+    }
+
+    function renderWeeklyReviewSections(text) {
+      const sections = parseWeeklyReviewSections(text);
+      if (!sections.length) {
+        return escapeHtml(text || "No review available.").replace(/\\n/g, "<br>");
+      }
+      return sections.map((sec) => `
+        <div class="review-section">
+          <div class="review-title">${escapeHtml(sec.title)}</div>
+          <div class="review-body">${escapeHtml(sec.body || "No details provided.")}</div>
+        </div>
+      `).join("");
+    }
+
+    function getTodayIsoDate() {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    function getCachedWeeklyReview() {
+      try {
+        const raw = localStorage.getItem(REVIEW_CACHE_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function saveWeeklyReviewToCache(data) {
+      try {
+        localStorage.setItem(REVIEW_CACHE_KEY, JSON.stringify({
+          data,
+          fetched_for_day: getTodayIsoDate(),
+        }));
+      } catch (err) {
+        // ignore cache write issues
+      }
+    }
+
+    function renderWeeklyReview(data, { cached = false } = {}) {
+      if (!data) {
+        weeklyReviewBody.textContent = "No review yet.";
+        weeklyReviewMeta.textContent = "Covers the last 7 completed days.";
+        return;
+      }
+      const safeHtml = renderWeeklyReviewSections(data.review || "No review available.");
+      weeklyReviewBody.innerHTML = safeHtml;
+      const generatedAt = data.generated_at ? new Date(data.generated_at).toLocaleString() : "n/a";
+      weeklyReviewMeta.textContent = `Covers ${data.range_start} to ${data.range_end}. Generated ${generatedAt}. Days with entries: ${data.days_with_entries}/7 (${data.total_entries} entries)${cached ? " · cached" : ""}.`;
+    }
+
+    function setWeeklyReviewLoading(message) {
+      weeklyReviewBody.textContent = message;
+      weeklyReviewMeta.textContent = "Covers the last 7 completed days.";
+    }
 
     function initDateTime() {
       const now = new Date();
@@ -251,6 +375,45 @@
           </li>
         `;
       }).join("");
+    }
+
+    async function fetchWeeklyReview(force = false) {
+      const todayIso = getTodayIsoDate();
+      const cached = getCachedWeeklyReview();
+      if (!force && cached && cached.fetched_for_day === todayIso) {
+        renderWeeklyReview(cached.data, { cached: true });
+        return;
+      }
+
+      if (cached?.data) {
+        renderWeeklyReview(cached.data, { cached: true });
+      } else {
+        setWeeklyReviewLoading("Generating review...");
+      }
+
+      refreshReviewBtn.disabled = true;
+      refreshReviewBtn.textContent = "Refreshing...";
+      try {
+        const res = await fetch("/api/review/last7");
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to load weekly review");
+        }
+        const data = await res.json();
+        renderWeeklyReview(data);
+        saveWeeklyReviewToCache(data);
+      } catch (err) {
+        if (cached?.data) {
+          renderWeeklyReview(cached.data, { cached: cached.fetched_for_day === todayIso });
+          weeklyReviewMeta.textContent += " · refresh failed";
+        } else {
+          weeklyReviewBody.textContent = err.message;
+          weeklyReviewMeta.textContent = "Unable to load review.";
+        }
+      } finally {
+        refreshReviewBtn.disabled = false;
+        refreshReviewBtn.textContent = "Refresh";
+      }
     }
 
     function updateUI(data) {
@@ -489,6 +652,7 @@
     });
     todaySaveMoodBtn.addEventListener("click", saveTodayMood);
     todayClearMoodBtn.addEventListener("click", clearTodayMood);
+    refreshReviewBtn.addEventListener("click", () => fetchWeeklyReview(true));
 
     tabButtons.forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -502,6 +666,7 @@
     window.addEventListener("pageshow", initDateTime);
     loadDashboard();
     loadTodayMood();
+    fetchWeeklyReview();
   </script>
 </body>
 </html>

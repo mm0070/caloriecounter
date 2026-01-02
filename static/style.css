@@ -379,6 +379,46 @@ select {
   flex-wrap: wrap;
 }
 
+.card-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.review-box {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.65rem;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(56, 189, 248, 0.12));
+}
+
+.review-text {
+  font-size: 0.9rem;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.review-section {
+  margin-bottom: 0.3rem;
+}
+
+.review-section:last-child {
+  margin-bottom: 0;
+}
+
+.review-title {
+  font-weight: 800;
+  font-size: 0.95rem;
+  margin-bottom: 0.08rem;
+}
+
+.review-body {
+  line-height: 1.25;
+  white-space: normal;
+}
+
 .mood-banner {
   background: linear-gradient(135deg, rgba(37, 99, 235, 0.22), rgba(56, 189, 248, 0.18));
   border: 1px solid rgba(56, 189, 248, 0.35);
