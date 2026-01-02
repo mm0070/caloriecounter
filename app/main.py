@@ -13,7 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
 from openai import OpenAI
-from prompts import (
+from app.prompts import (
     nutrition_image_prompt,
     nutrition_text_prompt,
     weekly_review_system_prompt,
