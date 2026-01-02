@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import (
-    create_engine, Column, Integer, Float, Text, DateTime, Date, func, text
+    create_engine, Column, Integer, Float, Text, DateTime, Date, func, text, UniqueConstraint
 )
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
@@ -29,6 +29,7 @@ if not OPENAI_API_KEY:
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 DB_URL = "sqlite:///./calories.db"
+DEFAULT_USER_NAME = "mihau"
 
 engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -46,6 +47,7 @@ class Entry(Base):
     __tablename__ = "entries"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True, nullable=False, default=1)
     ts = Column(DateTime(timezone=True), nullable=False, index=True)
     description = Column(Text, nullable=False)
     calories = Column(Float, nullable=False)
@@ -58,21 +60,32 @@ class Entry(Base):
 
 class Note(Base):
     __tablename__ = "notes"
+    __table_args__ = (UniqueConstraint("user_id", "title", name="uix_notes_user_title"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(Text, nullable=False, unique=True)
+    user_id = Column(Integer, index=True, nullable=False, default=1)
+    title = Column(Text, nullable=False)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc))
 
 
 class Mood(Base):
     __tablename__ = "moods"
+    __table_args__ = (UniqueConstraint("user_id", "date", name="uix_moods_user_date"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    date = Column(Date, nullable=False, unique=True, index=True)
+    user_id = Column(Integer, index=True, nullable=False, default=1)
+    date = Column(Date, nullable=False, index=True)
     mood_score = Column(Integer, nullable=False)
     mood_note = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc))
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(Text, nullable=False, unique=True)
 
 
 Base.metadata.create_all(bind=engine)
@@ -86,6 +99,107 @@ def ensure_alcohol_units_column():
 
 
 ensure_alcohol_units_column()
+
+
+# ---------- Multi-user schema helpers ----------
+
+
+def ensure_users_table_and_default():
+    Base.metadata.create_all(bind=engine, tables=[User.__table__])
+    db = SessionLocal()
+    try:
+        existing_target = db.query(User).filter(func.lower(User.name) == DEFAULT_USER_NAME.lower()).first()
+        if existing_target:
+            return
+
+        legacy = db.query(User).filter(func.lower(User.name) == "you").first()
+        if legacy:
+            legacy.name = DEFAULT_USER_NAME
+            db.commit()
+            return
+
+        any_user = db.query(User).first()
+        if not any_user:
+            user = User(name=DEFAULT_USER_NAME)
+            db.add(user)
+            db.commit()
+    finally:
+        db.close()
+
+
+def get_default_user_id() -> int:
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(func.lower(User.name) == DEFAULT_USER_NAME.lower()).first()
+        if user:
+            return user.id
+
+        legacy = db.query(User).filter(func.lower(User.name) == "you").first()
+        if legacy:
+            legacy.name = DEFAULT_USER_NAME
+            db.commit()
+            return legacy.id
+
+        user = User(name=DEFAULT_USER_NAME)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user.id
+    finally:
+        db.close()
+
+
+def ensure_user_id_column(table_name: str, default_user_id: int):
+    with engine.connect() as conn:
+        cols = [row[1] for row in conn.execute(text(f"PRAGMA table_info({table_name})"))]
+        if "user_id" not in cols:
+            conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN user_id INTEGER NOT NULL DEFAULT {default_user_id}"))
+
+
+def migrate_table_with_user_and_unique(table_name: str, columns_sql: str, unique_sql: str, default_user_id: int):
+    with engine.connect() as conn:
+        cols = [row[1] for row in conn.execute(text(f"PRAGMA table_info({table_name})"))]
+        if "user_id" in cols:
+            return
+
+        conn.execute(text("PRAGMA foreign_keys=off"))
+        temp_table = f"{table_name}_new"
+        conn.execute(text(f"CREATE TABLE {temp_table} ({columns_sql})"))
+        conn.execute(
+            text(
+                f"INSERT INTO {temp_table} SELECT *, {default_user_id} as user_id FROM {table_name}"
+            )
+        )
+        conn.execute(text(f"DROP TABLE {table_name}"))
+        conn.execute(text(f"ALTER TABLE {temp_table} RENAME TO {table_name}"))
+        if unique_sql:
+            conn.execute(text(unique_sql))
+        conn.execute(text("PRAGMA foreign_keys=on"))
+
+
+def ensure_multiuser_schema():
+    ensure_users_table_and_default()
+    default_user_id = get_default_user_id()
+    # entries: simple add column
+    ensure_user_id_column("entries", default_user_id)
+    ensure_alcohol_units_column()
+    with engine.connect() as conn:
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_entries_user_id ON entries(user_id)"))
+
+    # moods: add user_id if missing, then ensure unique/index
+    ensure_user_id_column("moods", default_user_id)
+    with engine.connect() as conn:
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uix_moods_user_date ON moods(user_id, date)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_moods_user_id ON moods(user_id)"))
+
+    # notes: add user_id if missing, then ensure unique/index
+    ensure_user_id_column("notes", default_user_id)
+    with engine.connect() as conn:
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uix_notes_user_title ON notes(user_id, lower(title))"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_notes_user_id ON notes(user_id)"))
+
+
+ensure_multiuser_schema()
 
 
 # ---------- Schemas ----------
@@ -148,6 +262,15 @@ class MoodOut(BaseModel):
     mood_note: str | None = None
 
 
+class UserOut(BaseModel):
+    id: int
+    name: str
+
+
+class AddUserRequest(BaseModel):
+    name: str
+
+
 class DashboardOut(BaseModel):
     today_stats: StatsOut
     last7_stats: StatsOut
@@ -200,6 +323,22 @@ def get_db() -> Session:
         db.close()
 
 
+def get_user_id_from_request(request: Request, db: Session) -> int:
+    header_val = request.headers.get("X-User-Id")
+    if header_val is None:
+        # default user fallback
+        return get_default_user_id()
+    try:
+        user_id = int(header_val)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid X-User-Id header")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user.id
+
+
 def get_today_range():
     # Use local time on the server
     today = date.today()
@@ -238,9 +377,10 @@ def get_last30_range():
     return start_utc, end_utc
 
 
-def get_days_since_last_alcohol(db: Session) -> int | None:
+def get_days_since_last_alcohol(db: Session, user_id: int) -> int | None:
     last_alcohol_entry = (
         db.query(Entry)
+        .filter(Entry.user_id == user_id)
         .filter(Entry.alcohol_units > 0)
         .order_by(Entry.ts.desc())
         .first()
@@ -266,7 +406,7 @@ def empty_stats() -> StatsOut:
     )
 
 
-def aggregate_stats(db: Session, start: datetime, end: datetime) -> StatsOut:
+def aggregate_stats(db: Session, user_id: int, start: datetime, end: datetime) -> StatsOut:
     result = (
         db.query(
             func.coalesce(func.sum(Entry.calories), 0),
@@ -275,7 +415,7 @@ def aggregate_stats(db: Session, start: datetime, end: datetime) -> StatsOut:
             func.coalesce(func.sum(Entry.fat), 0),
             func.coalesce(func.sum(Entry.alcohol_units), 0),
         )
-        .filter(Entry.ts >= start, Entry.ts < end)
+        .filter(Entry.ts >= start, Entry.ts < end, Entry.user_id == user_id)
         .one()
     )
     return StatsOut(
@@ -287,7 +427,7 @@ def aggregate_stats(db: Session, start: datetime, end: datetime) -> StatsOut:
     )
 
 
-def average_stats_on_logged_days(db: Session, start: datetime, end: datetime) -> StatsOut:
+def average_stats_on_logged_days(db: Session, user_id: int, start: datetime, end: datetime) -> StatsOut:
     daily_totals = (
         db.query(
             func.date(Entry.ts),
@@ -297,7 +437,7 @@ def average_stats_on_logged_days(db: Session, start: datetime, end: datetime) ->
             func.coalesce(func.sum(Entry.fat), 0),
             func.coalesce(func.sum(Entry.alcohol_units), 0),
         )
-        .filter(Entry.ts >= start, Entry.ts < end)
+        .filter(Entry.ts >= start, Entry.ts < end, Entry.user_id == user_id)
         .group_by(func.date(Entry.ts))
         .all()
     )
@@ -322,7 +462,7 @@ def average_stats_on_logged_days(db: Session, start: datetime, end: datetime) ->
     )
 
 
-def build_last7_review_context(db: Session):
+def build_last7_review_context(db: Session, user_id: int):
     start, end = get_last7_range()
     # Stats per day
     entry_rows = (
@@ -334,7 +474,7 @@ def build_last7_review_context(db: Session):
             func.coalesce(func.sum(Entry.fat), 0),
             func.coalesce(func.sum(Entry.alcohol_units), 0),
         )
-        .filter(Entry.ts >= start, Entry.ts < end)
+        .filter(Entry.ts >= start, Entry.ts < end, Entry.user_id == user_id)
         .group_by(func.date(Entry.ts))
         .all()
     )
@@ -350,11 +490,18 @@ def build_last7_review_context(db: Session):
     }
 
     total_entries = int(
-        db.query(func.count(Entry.id)).filter(Entry.ts >= start, Entry.ts < end).scalar() or 0
+        db.query(func.count(Entry.id))
+        .filter(Entry.ts >= start, Entry.ts < end, Entry.user_id == user_id)
+        .scalar()
+        or 0
     )
     days_with_entries = len(stats_map)
 
-    mood_rows = db.query(Mood).filter(Mood.date >= start.date(), Mood.date < end.date()).all()
+    mood_rows = (
+        db.query(Mood)
+        .filter(Mood.date >= start.date(), Mood.date < end.date(), Mood.user_id == user_id)
+        .all()
+    )
     mood_map = {m.date: m for m in mood_rows}
 
     days = [start.date() + timedelta(days=i) for i in range((end - start).days)]
@@ -373,8 +520,8 @@ def build_last7_review_context(db: Session):
             f"{d.isoformat()}: {calories:.0f} kcal, P {protein:.1f}g, C {carbs:.1f}g, F {fat:.1f}g, Alc {alcohol:.1f}u{mood_part}{suffix}"
         )
 
-    avg_stats = average_stats_on_logged_days(db, start, end)
-    total_stats = aggregate_stats(db, start, end)
+    avg_stats = average_stats_on_logged_days(db, user_id, start, end)
+    total_stats = aggregate_stats(db, user_id, start, end)
 
     return {
         "start": start,
@@ -388,8 +535,8 @@ def build_last7_review_context(db: Session):
     }
 
 
-def generate_last7_review(db: Session) -> WeeklyReviewOut:
-    context = build_last7_review_context(db)
+def generate_last7_review(db: Session, user_id: int) -> WeeklyReviewOut:
+    context = build_last7_review_context(db, user_id)
     start = context["start"]
     end = context["end"]
     range_start = context["days"][0] if context["days"] else start.date()
@@ -549,14 +696,14 @@ def call_nutrition_model_image(image_bytes: bytes, content_type: str, notes: lis
     return data
 
 
-def get_dashboard(db: Session) -> DashboardOut:
+def get_dashboard(db: Session, user_id: int) -> DashboardOut:
     today_start, today_end = get_today_range()
     last7_start, last7_end = get_last7_range()
     last30_start, last30_end = get_last30_range()
 
-    today_stats = aggregate_stats(db, today_start, today_end)
-    last7_avg = average_stats_on_logged_days(db, last7_start, last7_end)
-    last7_total = aggregate_stats(db, last7_start, last7_end)
+    today_stats = aggregate_stats(db, user_id, today_start, today_end)
+    last7_avg = average_stats_on_logged_days(db, user_id, last7_start, last7_end)
+    last7_total = aggregate_stats(db, user_id, last7_start, last7_end)
     last7_stats = StatsOut(
         total_calories=last7_avg.total_calories,
         total_protein=last7_avg.total_protein,
@@ -564,12 +711,12 @@ def get_dashboard(db: Session) -> DashboardOut:
         total_fat=last7_avg.total_fat,
         total_alcohol_units=last7_total.total_alcohol_units,
     )
-    last30_stats = aggregate_stats(db, last30_start, last30_end)
-    days_since_last_alcohol = get_days_since_last_alcohol(db)
+    last30_stats = aggregate_stats(db, user_id, last30_start, last30_end)
+    days_since_last_alcohol = get_days_since_last_alcohol(db, user_id)
 
     today_entries = (
         db.query(Entry)
-        .filter(Entry.ts >= today_start, Entry.ts < today_end)
+        .filter(Entry.ts >= today_start, Entry.ts < today_end, Entry.user_id == user_id)
         .order_by(Entry.ts.desc())
         .all()
     )
@@ -597,13 +744,13 @@ def get_dashboard(db: Session) -> DashboardOut:
     )
 
 
-def get_day_data(db: Session, target_date: date) -> DayOut:
+def get_day_data(db: Session, user_id: int, target_date: date) -> DayOut:
     start, end = get_date_range(target_date)
-    stats = aggregate_stats(db, start, end)
-    mood = db.query(Mood).filter(Mood.date == target_date).first()
+    stats = aggregate_stats(db, user_id, start, end)
+    mood = db.query(Mood).filter(Mood.date == target_date, Mood.user_id == user_id).first()
     entries = (
         db.query(Entry)
-        .filter(Entry.ts >= start, Entry.ts < end)
+        .filter(Entry.ts >= start, Entry.ts < end, Entry.user_id == user_id)
         .order_by(Entry.ts.desc())
         .all()
     )
@@ -665,7 +812,8 @@ async def add_entry(payload: AddEntryRequest, request: Request):
         raise HTTPException(status_code=400, detail="Text is empty")
 
     db = next(get_db())
-    notes = db.query(Note).all()
+    user_id = get_user_id_from_request(request, db)
+    notes = db.query(Note).filter(Note.user_id == user_id).all()
     original_text = payload.text.strip()
     model_data = call_nutrition_model(original_text, notes)
 
@@ -677,6 +825,7 @@ async def add_entry(payload: AddEntryRequest, request: Request):
         entry_ts = datetime.now(timezone.utc)
 
     entry = Entry(
+        user_id=user_id,
         ts=entry_ts,
         description=original_text,
         calories=float(model_data["calories"]),
@@ -690,11 +839,11 @@ async def add_entry(payload: AddEntryRequest, request: Request):
     db.add(entry)
     db.commit()
 
-    return get_dashboard(db)
+    return get_dashboard(db, user_id)
 
 
 @app.post("/api/entries/photo", response_model=DashboardOut)
-async def add_entry_photo(file: UploadFile = File(...), ts: datetime | None = Form(None)):
+async def add_entry_photo(request: Request, file: UploadFile = File(...), ts: datetime | None = Form(None)):
     if not file:
         raise HTTPException(status_code=400, detail="No file uploaded")
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -705,7 +854,8 @@ async def add_entry_photo(file: UploadFile = File(...), ts: datetime | None = Fo
         raise HTTPException(status_code=400, detail="Empty image")
 
     db = next(get_db())
-    notes = db.query(Note).all()
+    user_id = get_user_id_from_request(request, db)
+    notes = db.query(Note).filter(Note.user_id == user_id).all()
     model_data = call_nutrition_model_image(image_bytes, file.content_type, notes)
 
     if ts:
@@ -717,6 +867,7 @@ async def add_entry_photo(file: UploadFile = File(...), ts: datetime | None = Fo
 
     description = model_data.get("description") or "Photo entry"
     entry = Entry(
+        user_id=user_id,
         ts=entry_ts,
         description=description,
         calories=float(model_data["calories"]),
@@ -730,11 +881,11 @@ async def add_entry_photo(file: UploadFile = File(...), ts: datetime | None = Fo
     db.add(entry)
     db.commit()
 
-    return get_dashboard(db)
+    return get_dashboard(db, user_id)
 
 
 @app.put("/api/entries/{entry_id}", response_model=EntryOut)
-async def update_entry(entry_id: int, payload: UpdateEntryRequest):
+async def update_entry(entry_id: int, payload: UpdateEntryRequest, request: Request):
     if all(
         value is None
         for value in [
@@ -750,7 +901,8 @@ async def update_entry(entry_id: int, payload: UpdateEntryRequest):
         raise HTTPException(status_code=400, detail="Provide at least one field to update")
 
     db = next(get_db())
-    entry = db.query(Entry).filter(Entry.id == entry_id).first()
+    user_id = get_user_id_from_request(request, db)
+    entry = db.query(Entry).filter(Entry.id == entry_id, Entry.user_id == user_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
@@ -797,55 +949,60 @@ async def update_entry(entry_id: int, payload: UpdateEntryRequest):
 
 
 @app.delete("/api/entries/{entry_id}", response_model=DashboardOut)
-async def delete_entry(entry_id: int):
+async def delete_entry(entry_id: int, request: Request):
     db = next(get_db())
-    entry = db.query(Entry).filter(Entry.id == entry_id).first()
+    user_id = get_user_id_from_request(request, db)
+    entry = db.query(Entry).filter(Entry.id == entry_id, Entry.user_id == user_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
     db.delete(entry)
     db.commit()
 
-    return get_dashboard(db)
+    return get_dashboard(db, user_id)
 
 
 @app.get("/api/dashboard", response_model=DashboardOut)
-async def dashboard():
+async def dashboard(request: Request):
     db = next(get_db())
-    return get_dashboard(db)
+    user_id = get_user_id_from_request(request, db)
+    return get_dashboard(db, user_id)
 
 
 @app.get("/api/review/last7", response_model=WeeklyReviewOut)
-async def last7_review():
+async def last7_review(request: Request):
     db = next(get_db())
-    return generate_last7_review(db)
+    user_id = get_user_id_from_request(request, db)
+    return generate_last7_review(db, user_id)
 
 
 @app.get("/api/day", response_model=DayOut)
-async def day_view(day: str | None = None):
+async def day_view(day: str | None = None, request: Request = None):
     db = next(get_db())
+    user_id = get_user_id_from_request(request, db)
     try:
         target_date = date.fromisoformat(day) if day else date.today()
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
-    return get_day_data(db, target_date)
+    return get_day_data(db, user_id, target_date)
 
 
 @app.put("/api/mood", response_model=MoodOut)
-async def upsert_mood(payload: MoodRequest):
+async def upsert_mood(payload: MoodRequest, request: Request):
     db = next(get_db())
+    user_id = get_user_id_from_request(request, db)
     if payload.mood_score < 1 or payload.mood_score > 10:
         raise HTTPException(status_code=400, detail="mood_score must be between 1 and 10")
 
-    mood = db.query(Mood).filter(Mood.date == payload.date).first()
+    mood = db.query(Mood).filter(Mood.date == payload.date, Mood.user_id == user_id).first()
     note = payload.mood_note.strip() if payload.mood_note else None
 
     if mood:
         mood.mood_score = payload.mood_score
         mood.mood_note = note
     else:
-        mood = Mood(date=payload.date, mood_score=payload.mood_score, mood_note=note)
+        mood = Mood(date=payload.date, mood_score=payload.mood_score, mood_note=note, user_id=user_id)
         db.add(mood)
 
     db.commit()
@@ -854,26 +1011,28 @@ async def upsert_mood(payload: MoodRequest):
 
 
 @app.get("/api/mood", response_model=MoodOut | None)
-async def get_mood(day: str | None = None):
+async def get_mood(day: str | None = None, request: Request = None):
     db = next(get_db())
+    user_id = get_user_id_from_request(request, db)
     try:
         target_date = date.fromisoformat(day) if day else date.today()
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
-    mood = db.query(Mood).filter(Mood.date == target_date).first()
+    mood = db.query(Mood).filter(Mood.date == target_date, Mood.user_id == user_id).first()
     return mood_to_out(mood) if mood else None
 
 
 @app.delete("/api/mood", status_code=204)
-async def delete_mood(day: str):
+async def delete_mood(day: str, request: Request):
     db = next(get_db())
+    user_id = get_user_id_from_request(request, db)
     try:
         target_date = date.fromisoformat(day)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
-    mood = db.query(Mood).filter(Mood.date == target_date).first()
+    mood = db.query(Mood).filter(Mood.date == target_date, Mood.user_id == user_id).first()
     if mood:
         db.delete(mood)
         db.commit()
@@ -881,10 +1040,15 @@ async def delete_mood(day: str):
 
 
 @app.get("/api/calendar", response_model=list[CalendarDayOut])
-async def calendar(month: str | None = None):
+async def calendar(month: str | None = None, request: Request = None):
     db = next(get_db())
+    user_id = get_user_id_from_request(request, db)
     first_day, start_dt, end_dt = get_month_range(month)
-    moods = db.query(Mood).filter(Mood.date >= first_day, Mood.date < end_dt.date()).all()
+    moods = (
+        db.query(Mood)
+        .filter(Mood.date >= first_day, Mood.date < end_dt.date(), Mood.user_id == user_id)
+        .all()
+    )
     mood_map = {m.date: m for m in moods}
     entry_rows = (
         db.query(
@@ -895,7 +1059,7 @@ async def calendar(month: str | None = None):
             func.coalesce(func.sum(Entry.fat), 0),
             func.coalesce(func.sum(Entry.alcohol_units), 0),
         )
-        .filter(Entry.ts >= start_dt, Entry.ts < end_dt)
+        .filter(Entry.ts >= start_dt, Entry.ts < end_dt, Entry.user_id == user_id)
         .group_by(func.date(Entry.ts))
         .all()
     )
@@ -929,8 +1093,9 @@ async def calendar(month: str | None = None):
 
 
 @app.get("/api/series/last7", response_model=list[SeriesPoint])
-async def last7_series():
+async def last7_series(request: Request):
     db = next(get_db())
+    user_id = get_user_id_from_request(request, db)
     start, end = get_last7_range()  # start = today-7, end = today (excludes current day)
     # Stats per day
     entry_rows = (
@@ -939,7 +1104,7 @@ async def last7_series():
             func.coalesce(func.sum(Entry.calories), 0),
             func.coalesce(func.sum(Entry.protein), 0),
         )
-        .filter(Entry.ts >= start, Entry.ts < end)
+        .filter(Entry.ts >= start, Entry.ts < end, Entry.user_id == user_id)
         .group_by(func.date(Entry.ts))
         .all()
     )
@@ -952,7 +1117,11 @@ async def last7_series():
     }
 
     # Moods per day
-    mood_rows = db.query(Mood).filter(Mood.date >= start.date(), Mood.date < end.date()).all()
+    mood_rows = (
+        db.query(Mood)
+        .filter(Mood.date >= start.date(), Mood.date < end.date(), Mood.user_id == user_id)
+        .all()
+    )
     mood_map = {m.date: m.mood_score for m in mood_rows}
 
     days = [start.date() + timedelta(days=i) for i in range((end - start).days)]
@@ -971,47 +1140,59 @@ async def last7_series():
 
 
 @app.get("/api/notes", response_model=list[NoteOut])
-async def list_notes():
+async def list_notes(request: Request):
     db = next(get_db())
-    notes = db.query(Note).order_by(Note.title.asc()).all()
+    user_id = get_user_id_from_request(request, db)
+    notes = db.query(Note).filter(Note.user_id == user_id).order_by(Note.title.asc()).all()
     return [note_to_out(n) for n in notes]
 
 
 @app.post("/api/notes", response_model=list[NoteOut])
-async def add_note(payload: AddNoteRequest):
+async def add_note(payload: AddNoteRequest, request: Request):
     title = payload.title.strip()
     content = payload.content.strip()
     if not title or not content:
         raise HTTPException(status_code=400, detail="Title and content are required")
 
     db = next(get_db())
-    existing = db.query(Note).filter(func.lower(Note.title) == title.lower()).first()
+    user_id = get_user_id_from_request(request, db)
+    existing = (
+        db.query(Note)
+        .filter(Note.user_id == user_id, func.lower(Note.title) == title.lower())
+        .first()
+    )
     if existing:
         existing.content = content
         existing.created_at = datetime.now(timezone.utc)
     else:
-        note = Note(title=title, content=content, created_at=datetime.now(timezone.utc))
+        note = Note(
+            title=title,
+            content=content,
+            created_at=datetime.now(timezone.utc),
+            user_id=user_id,
+        )
         db.add(note)
 
     db.commit()
-    return await list_notes()
+    return await list_notes(request)
 
 
 @app.put("/api/notes/{note_id}", response_model=list[NoteOut])
-async def update_note(note_id: int, payload: AddNoteRequest):
+async def update_note(note_id: int, payload: AddNoteRequest, request: Request):
     title = payload.title.strip()
     content = payload.content.strip()
     if not title or not content:
         raise HTTPException(status_code=400, detail="Title and content are required")
 
     db = next(get_db())
-    note = db.query(Note).filter(Note.id == note_id).first()
+    user_id = get_user_id_from_request(request, db)
+    note = db.query(Note).filter(Note.id == note_id, Note.user_id == user_id).first()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
 
     duplicate = (
         db.query(Note)
-        .filter(func.lower(Note.title) == title.lower(), Note.id != note_id)
+        .filter(func.lower(Note.title) == title.lower(), Note.id != note_id, Note.user_id == user_id)
         .first()
     )
     if duplicate:
@@ -1021,16 +1202,47 @@ async def update_note(note_id: int, payload: AddNoteRequest):
     note.content = content
     note.created_at = datetime.now(timezone.utc)
     db.commit()
-    return await list_notes()
+    return await list_notes(request)
 
 
 @app.delete("/api/notes/{note_id}", response_model=list[NoteOut])
-async def delete_note(note_id: int):
+async def delete_note(note_id: int, request: Request):
     db = next(get_db())
-    note = db.query(Note).filter(Note.id == note_id).first()
+    user_id = get_user_id_from_request(request, db)
+    note = db.query(Note).filter(Note.id == note_id, Note.user_id == user_id).first()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
 
     db.delete(note)
     db.commit()
-    return await list_notes()
+    return await list_notes(request)
+
+
+# ---------- Users ----------
+
+
+def user_to_out(user: User) -> UserOut:
+    return UserOut(id=user.id, name=user.name)
+
+
+@app.get("/api/users", response_model=list[UserOut])
+async def list_users():
+    db = next(get_db())
+    users = db.query(User).order_by(User.id.asc()).all()
+    return [user_to_out(u) for u in users]
+
+
+@app.post("/api/users", response_model=list[UserOut])
+async def create_user(payload: AddUserRequest):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+    db = next(get_db())
+    existing = db.query(User).filter(func.lower(User.name) == name.lower()).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="User with this name already exists")
+    user = User(name=name)
+    db.add(user)
+    db.commit()
+    users = db.query(User).order_by(User.id.asc()).all()
+    return [user_to_out(u) for u in users]

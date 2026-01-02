@@ -34,6 +34,7 @@
         <a href="/static/history.html" class="nav-btn"><i class="fa-solid fa-clock-rotate-left"></i> History</a>
         <a href="/static/notes.html" class="nav-btn"><i class="fa-solid fa-note-sticky"></i> Notes</a>
       </nav>
+      <button id="switch-user-btn" class="switch-user-btn" type="button"><i class="fa-solid fa-user"></i> Switch user</button>
     </header>
 
     <div class="card">
@@ -173,8 +174,11 @@
     const weeklyReviewBody = document.getElementById("weekly-review-body");
     const weeklyReviewMeta = document.getElementById("weekly-review-meta");
     const refreshReviewBtn = document.getElementById("refresh-review-btn");
+    const switchUserBtn = document.getElementById("switch-user-btn");
     let todayMoodSelection = null;
     let latestDashboard = null;
+    let currentUserId = null;
+    let usersCache = [];
 
     function forceFreshLoad(reason) {
       location.reload();
@@ -183,6 +187,33 @@
     document.addEventListener("visibilitychange", () => { if (!document.hidden) forceFreshLoad("visibilitychange"); });
 
     const REVIEW_CACHE_KEY = "weeklyReviewCache";
+    const USER_STORAGE_KEY = "ccSelectedUserId";
+
+    function getStoredUserId() {
+      try {
+        const raw = localStorage.getItem(USER_STORAGE_KEY);
+        return raw ? Number(raw) : null;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function setStoredUserId(id) {
+      try {
+        localStorage.setItem(USER_STORAGE_KEY, String(id));
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    function fetchWithUser(url, options = {}) {
+      if (!currentUserId) {
+        throw new Error("Select a user first.");
+      }
+      const headers = options.headers ? { ...options.headers } : {};
+      headers["X-User-Id"] = currentUserId;
+      return fetch(url, { ...options, headers });
+    }
 
     function escapeHtml(str) {
       return str
@@ -255,9 +286,13 @@
       return new Date().toISOString().slice(0, 10);
     }
 
+    function getWeeklyCacheKey() {
+      return `${REVIEW_CACHE_KEY}:${currentUserId || "none"}`;
+    }
+
     function getCachedWeeklyReview() {
       try {
-        const raw = localStorage.getItem(REVIEW_CACHE_KEY);
+        const raw = localStorage.getItem(getWeeklyCacheKey());
         return raw ? JSON.parse(raw) : null;
       } catch (err) {
         return null;
@@ -266,7 +301,7 @@
 
     function saveWeeklyReviewToCache(data) {
       try {
-        localStorage.setItem(REVIEW_CACHE_KEY, JSON.stringify({
+        localStorage.setItem(getWeeklyCacheKey(), JSON.stringify({
           data,
           fetched_for_day: getTodayIsoDate(),
         }));
@@ -284,12 +319,95 @@
       const safeHtml = renderWeeklyReviewSections(data.review || "No review available.");
       weeklyReviewBody.innerHTML = safeHtml;
       const generatedAt = data.generated_at ? new Date(data.generated_at).toLocaleString() : "n/a";
-      weeklyReviewMeta.textContent = `Covers ${data.range_start} to ${data.range_end}. Generated ${generatedAt}. Days with entries: ${data.days_with_entries}/7 (${data.total_entries} entries)${cached ? " · cached" : ""}.`;
+      weeklyReviewMeta.textContent = `Covers ${data.range_start} to ${data.range_end}. Generated ${generatedAt}. Days with entries: ${data.days_with_entries}/7 (${data.total_entries} entries)${cached ? " (cached)" : ""}.`;
     }
 
     function setWeeklyReviewLoading(message) {
       weeklyReviewBody.textContent = message;
       weeklyReviewMeta.textContent = "Covers the last 7 completed days.";
+    }
+
+    function renderUserPicker(users) {
+      const picker = document.createElement("div");
+      picker.className = "user-picker-backdrop";
+      picker.innerHTML = `
+        <div class="user-picker">
+          <h2 style="margin-top:0;">Who’s using this?</h2>
+          <div class="user-grid">
+            ${users.map(u => `
+              <div class="user-card" data-user-id="${u.id}">${escapeHtml(u.name)}</div>
+            `).join("")}
+            <div class="user-card primary" data-add-user="true"><i class="fa-solid fa-user-plus"></i> Add user</div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(picker);
+      picker.addEventListener("click", async (e) => {
+        if (e.target.closest("[data-user-id]")) {
+          const id = Number(e.target.closest("[data-user-id]").getAttribute("data-user-id"));
+          setCurrentUser(id, { persist: true });
+          picker.remove();
+        } else if (e.target.closest("[data-add-user]")) {
+          await handleAddUser(true);
+          picker.remove();
+        } else if (e.target === picker) {
+          // clicking backdrop does nothing
+        }
+      });
+    }
+
+    function setCurrentUser(id, { persist = true } = {}) {
+      currentUserId = id;
+      if (persist) setStoredUserId(id);
+      loadDashboard();
+      loadTodayMood();
+      fetchWeeklyReview();
+    }
+
+    async function loadUsers(showPickerIfMissing = false) {
+      try {
+        const res = await fetch("/api/users");
+        if (!res.ok) throw new Error("Failed to load users");
+        const users = await res.json();
+        if (!Array.isArray(users) || !users.length) {
+          throw new Error("No users available");
+        }
+        usersCache = users;
+        const storedId = getStoredUserId();
+        const foundStored = users.find(u => u.id === storedId);
+        const chosenId = foundStored ? foundStored.id : users[0].id;
+        if (showPickerIfMissing || !foundStored) {
+          renderUserPicker(users);
+        }
+        setCurrentUser(chosenId, { persist: true });
+      } catch (err) {
+        errorEl.textContent = err.message || "Failed to load users";
+      }
+    }
+
+    async function handleAddUser(openPickerAfter = false) {
+      const name = prompt("New user name?")?.trim();
+      if (!name) return;
+      try {
+        const res = await fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to add user");
+        }
+        const users = await res.json();
+        usersCache = users;
+        const newUser = users.find(u => u.name.toLowerCase() === name.toLowerCase()) || users[users.length - 1];
+        setCurrentUser(newUser.id, { persist: true });
+        if (openPickerAfter) {
+          renderUserPicker(users);
+        }
+      } catch (err) {
+        alert(err.message);
+      }
     }
 
     function initDateTime() {
@@ -394,7 +512,7 @@
       refreshReviewBtn.disabled = true;
       refreshReviewBtn.textContent = "Refreshing...";
       try {
-        const res = await fetch("/api/review/last7");
+        const res = await fetchWithUser("/api/review/last7");
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.detail || "Failed to load weekly review");
@@ -436,7 +554,7 @@
 
     async function loadDashboard() {
       try {
-        const res = await fetch("/api/dashboard");
+        const res = await fetchWithUser("/api/dashboard");
         if (!res.ok) throw new Error("Failed to load dashboard");
         const data = await res.json();
         updateUI(data);
@@ -468,7 +586,7 @@
       addBtn.textContent = "Adding...";
 
       try {
-        const res = await fetch("/api/entries", {
+        const res = await fetchWithUser("/api/entries", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text, ts: ts.toISOString() }),
@@ -513,7 +631,7 @@
         const formData = new FormData();
         formData.append("file", file);
         formData.append("ts", ts.toISOString());
-        const res = await fetch("/api/entries/photo", {
+        const res = await fetchWithUser("/api/entries/photo", {
           method: "POST",
           body: formData,
         });
@@ -535,7 +653,7 @@
     async function deleteEntry(id) {
       errorEl.textContent = "";
       try {
-        const res = await fetch(`/api/entries/${encodeURIComponent(id)}`, {
+        const res = await fetchWithUser(`/api/entries/${encodeURIComponent(id)}`, {
           method: "DELETE",
         });
         if (!res.ok) {
@@ -574,7 +692,7 @@
 
     async function loadTodayMood() {
       try {
-        const res = await fetch("/api/mood");
+        const res = await fetchWithUser("/api/mood");
         if (!res.ok) throw new Error("Failed to load mood");
         const data = await res.json();
         renderTodayMood(data);
@@ -591,7 +709,7 @@
       errorEl.textContent = "";
       todaySaveMoodBtn.disabled = true;
       try {
-        const res = await fetch("/api/mood", {
+        const res = await fetchWithUser("/api/mood", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -618,7 +736,7 @@
       todayClearMoodBtn.disabled = true;
       errorEl.textContent = "";
       try {
-        const res = await fetch(`/api/mood?day=${encodeURIComponent(new Date().toISOString().slice(0, 10))}`, { method: "DELETE" });
+        const res = await fetchWithUser(`/api/mood?day=${encodeURIComponent(new Date().toISOString().slice(0, 10))}`, { method: "DELETE" });
         if (!res.ok && res.status !== 204) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.detail || "Failed to clear mood");
@@ -653,6 +771,9 @@
     todaySaveMoodBtn.addEventListener("click", saveTodayMood);
     todayClearMoodBtn.addEventListener("click", clearTodayMood);
     refreshReviewBtn.addEventListener("click", () => fetchWeeklyReview(true));
+    switchUserBtn.addEventListener("click", () => {
+      renderUserPicker(usersCache);
+    });
 
     tabButtons.forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -664,9 +785,7 @@
 
     initDateTime();
     window.addEventListener("pageshow", initDateTime);
-    loadDashboard();
-    loadTodayMood();
-    fetchWeeklyReview();
+    loadUsers(true);
   </script>
 </body>
 </html>

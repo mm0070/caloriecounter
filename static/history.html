@@ -18,6 +18,7 @@
       <a href="/static/history.html" class="nav-btn"><i class="fa-solid fa-clock-rotate-left"></i> History</a>
       <a href="/static/notes.html" class="nav-btn"><i class="fa-solid fa-note-sticky"></i> Notes</a>
     </nav>
+    <button id="switch-user-btn" class="switch-user-btn" type="button"><i class="fa-solid fa-user"></i> Switch user</button>
   </header>
 
   <div class="card">
@@ -121,6 +122,7 @@
     const caloriesCanvas = document.getElementById("chart-calories");
     const proteinCanvas = document.getElementById("chart-protein");
     const moodCanvas = document.getElementById("chart-mood");
+    const switchUserBtn = document.getElementById("switch-user-btn");
     let currentEntries = [];
     let editingId = null;
     let calendarData = [];
@@ -131,6 +133,8 @@
     let caloriesChart = null;
     let proteinChart = null;
     let moodChart = null;
+    let currentUserId = null;
+    let usersCache = [];
     const calendarMediaQuery = window.matchMedia("(max-width: 520px)");
 
     function forceFreshLoad(reason) {
@@ -148,6 +152,114 @@
     calendarMediaQuery.addEventListener("change", () => {
       loadCalendar();
     });
+
+    const USER_STORAGE_KEY = "ccSelectedUserId";
+
+    function getStoredUserId() {
+      try {
+        const raw = localStorage.getItem(USER_STORAGE_KEY);
+        return raw ? Number(raw) : null;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function setStoredUserId(id) {
+      try {
+        localStorage.setItem(USER_STORAGE_KEY, String(id));
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    function fetchWithUser(url, options = {}) {
+      if (!currentUserId) throw new Error("Select a user first.");
+      const headers = options.headers ? { ...options.headers } : {};
+      headers["X-User-Id"] = currentUserId;
+      return fetch(url, { ...options, headers });
+    }
+
+    function renderUserPicker(users) {
+      const picker = document.createElement("div");
+      picker.className = "user-picker-backdrop";
+      picker.innerHTML = `
+        <div class="user-picker">
+          <h2 style="margin-top:0;">Who’s using this?</h2>
+          <div class="user-grid">
+            ${users.map(u => `
+              <div class="user-card" data-user-id="${u.id}">${u.name}</div>
+            `).join("")}
+            <div class="user-card primary" data-add-user="true"><i class="fa-solid fa-user-plus"></i> Add user</div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(picker);
+      picker.addEventListener("click", async (e) => {
+        if (e.target.closest("[data-user-id]")) {
+          const id = Number(e.target.closest("[data-user-id]").getAttribute("data-user-id"));
+          setCurrentUser(id, { persist: true });
+          picker.remove();
+        } else if (e.target.closest("[data-add-user]")) {
+          await handleAddUser(true);
+          picker.remove();
+        }
+      });
+    }
+
+    function setCurrentUser(id, { persist = true } = {}) {
+      currentUserId = id;
+      if (persist) setStoredUserId(id);
+      const targetDay = dayInput.value || formatDateInput(new Date());
+      if (!dayInput.value) {
+        dayInput.value = targetDay;
+      }
+      loadDay(targetDay);
+      loadCalendar();
+      renderCharts();
+    }
+
+    async function loadUsers(showPickerIfMissing = false) {
+      try {
+        const res = await fetch("/api/users");
+        if (!res.ok) throw new Error("Failed to load users");
+        const users = await res.json();
+        if (!users.length) throw new Error("No users available");
+        usersCache = users;
+        const storedId = getStoredUserId();
+        const chosen = users.find(u => u.id === storedId) || users[0];
+        if (showPickerIfMissing || !users.find(u => u.id === storedId)) {
+          renderUserPicker(users);
+        }
+        setCurrentUser(chosen.id, { persist: true });
+      } catch (err) {
+        setError(err.message || "Failed to load users");
+      }
+    }
+
+    async function handleAddUser(openPickerAfter = false) {
+      const name = prompt("New user name?")?.trim();
+      if (!name) return;
+      try {
+        const res = await fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to add user");
+        }
+        const users = await res.json();
+        usersCache = users;
+        const newUser = users.find(u => u.name.toLowerCase() === name.toLowerCase()) || users[users.length - 1];
+        setCurrentUser(newUser.id, { persist: true });
+        if (openPickerAfter) {
+          renderUserPicker(users);
+        }
+      } catch (err) {
+        alert(err.message);
+      }
+    }
 
     function formatDateInput(dt) {
       const year = dt.getFullYear();
@@ -416,7 +528,7 @@
         return;
       }
       try {
-        const res = await fetch("/api/series/last7");
+        const res = await fetchWithUser("/api/series/last7");
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.detail || "Failed to load chart data");
@@ -531,10 +643,10 @@
         monthsToFetch.push(formatMonth(calendarMonth));
       }
       const uniqueMonths = [...new Set(monthsToFetch)];
-      updateMonthLabel();
+        updateMonthLabel();
       try {
         const responses = await Promise.all(uniqueMonths.map(async (m) => {
-          const res = await fetch(`/api/calendar?month=${encodeURIComponent(m)}`);
+          const res = await fetchWithUser(`/api/calendar?month=${encodeURIComponent(m)}`);
           if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
             throw new Error(errData.detail || "Failed to load calendar");
@@ -551,7 +663,7 @@
     async function loadDay(day) {
       setError("");
       try {
-        const res = await fetch(`/api/day?day=${encodeURIComponent(day)}`);
+        const res = await fetchWithUser(`/api/day?day=${encodeURIComponent(day)}`);
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.detail || "Failed to load day");
@@ -576,7 +688,7 @@
         return;
       }
       try {
-        const res = await fetch("/api/mood", {
+        const res = await fetchWithUser("/api/mood", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -600,7 +712,7 @@
       setError("");
       if (!dayInput.value) return;
       try {
-        const res = await fetch(`/api/mood?day=${encodeURIComponent(dayInput.value)}`, { method: "DELETE" });
+        const res = await fetchWithUser(`/api/mood?day=${encodeURIComponent(dayInput.value)}`, { method: "DELETE" });
         if (!res.ok && res.status !== 204) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.detail || "Failed to clear mood");
@@ -651,7 +763,7 @@
       }
 
       try {
-        const res = await fetch(`/api/entries/${id}`, {
+        const res = await fetchWithUser(`/api/entries/${id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -749,8 +861,11 @@
       }
     });
 
-    loadCalendar();
-    loadDay(todayIso);
+    switchUserBtn.addEventListener("click", () => {
+      renderUserPicker(usersCache);
+    });
+
+    loadUsers(true);
   </script>
 </body>
 </html>

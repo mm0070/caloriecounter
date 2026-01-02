@@ -90,6 +90,77 @@ a { color: inherit; }
   background: var(--primary-strong);
 }
 
+.user-switcher {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.user-select {
+  min-width: 160px;
+}
+
+.user-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 1000;
+}
+
+.user-picker {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1rem;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: var(--shadow);
+}
+
+.user-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.user-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem;
+  cursor: pointer;
+  background: #0b1529;
+  text-align: center;
+  font-weight: 700;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.user-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.35);
+  border-color: var(--accent);
+}
+
+.user-card.primary {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-strong) 100%);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.switch-user-btn {
+  border: 1px solid var(--border);
+  background: #0b1529;
+  color: var(--text);
+  padding: 0.35rem 0.6rem;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

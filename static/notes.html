@@ -18,6 +18,7 @@
       <a href="/static/history.html" class="nav-btn"><i class="fa-solid fa-clock-rotate-left"></i> History</a>
       <a href="/static/notes.html" class="nav-btn"><i class="fa-solid fa-note-sticky"></i> Notes</a>
     </nav>
+    <button id="switch-user-btn" class="switch-user-btn" type="button"><i class="fa-solid fa-user"></i> Switch user</button>
   </header>
 
   <div class="card">
@@ -50,7 +51,10 @@
     const contentInput = document.getElementById("note-content");
     const saveBtn = document.getElementById("save-btn");
     const errorEl = document.getElementById("error");
+    const switchUserBtn = document.getElementById("switch-user-btn");
     let hasForcedReload = false;
+    let currentUserId = null;
+    let usersCache = [];
 
     function forceFreshLoad(reason) {
       if (hasForcedReload) return;
@@ -64,6 +68,108 @@
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) forceFreshLoad("visibilitychange");
     });
+
+    const USER_STORAGE_KEY = "ccSelectedUserId";
+
+    function getStoredUserId() {
+      try {
+        const raw = localStorage.getItem(USER_STORAGE_KEY);
+        return raw ? Number(raw) : null;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function setStoredUserId(id) {
+      try {
+        localStorage.setItem(USER_STORAGE_KEY, String(id));
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    function fetchWithUser(url, options = {}) {
+      if (!currentUserId) throw new Error("Select a user first.");
+      const headers = options.headers ? { ...options.headers } : {};
+      headers["X-User-Id"] = currentUserId;
+      return fetch(url, { ...options, headers });
+    }
+
+    function renderUserPicker(users) {
+      const picker = document.createElement("div");
+      picker.className = "user-picker-backdrop";
+      picker.innerHTML = `
+        <div class="user-picker">
+          <h2 style="margin-top:0;">Who’s using this?</h2>
+          <div class="user-grid">
+            ${users.map(u => `
+              <div class="user-card" data-user-id="${u.id}">${u.name}</div>
+            `).join("")}
+            <div class="user-card primary" data-add-user="true"><i class="fa-solid fa-user-plus"></i> Add user</div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(picker);
+      picker.addEventListener("click", async (e) => {
+        if (e.target.closest("[data-user-id]")) {
+          const id = Number(e.target.closest("[data-user-id]").getAttribute("data-user-id"));
+          setCurrentUser(id, { persist: true });
+          picker.remove();
+        } else if (e.target.closest("[data-add-user]")) {
+          await handleAddUser(true);
+          picker.remove();
+        }
+      });
+    }
+
+    async function loadUsers(showPickerIfMissing = false) {
+      try {
+        const res = await fetch("/api/users");
+        if (!res.ok) throw new Error("Failed to load users");
+        const users = await res.json();
+        if (!users.length) throw new Error("No users available");
+        usersCache = users;
+        const storedId = getStoredUserId();
+        const chosen = users.find(u => u.id === storedId) || users[0];
+        if (showPickerIfMissing || !users.find(u => u.id === storedId)) {
+          renderUserPicker(users);
+        }
+        setCurrentUser(chosen.id, { persist: true });
+      } catch (err) {
+        errorEl.textContent = err.message || "Failed to load users";
+      }
+    }
+
+    async function handleAddUser(openPickerAfter = false) {
+      const name = prompt("New user name?")?.trim();
+      if (!name) return;
+      try {
+        const res = await fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to add user");
+        }
+        const users = await res.json();
+        usersCache = users;
+        const newUser = users.find(u => u.name.toLowerCase() === name.toLowerCase()) || users[users.length - 1];
+        setCurrentUser(newUser.id, { persist: true });
+        if (openPickerAfter) {
+          renderUserPicker(users);
+        }
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    function setCurrentUser(id, { persist = true } = {}) {
+      currentUserId = id;
+      if (persist) setStoredUserId(id);
+      loadNotes();
+    }
 
     let editingId = null;
 
@@ -88,7 +194,7 @@
     async function loadNotes() {
       errorEl.textContent = "";
       try {
-        const res = await fetch("/api/notes");
+        const res = await fetchWithUser("/api/notes");
         if (!res.ok) throw new Error("Failed to load notes");
         const data = await res.json();
         renderNotes(data);
@@ -110,7 +216,7 @@
       try {
         const method = editingId ? "PUT" : "POST";
         const url = editingId ? `/api/notes/${editingId}` : "/api/notes";
-        const res = await fetch(url, {
+        const res = await fetchWithUser(url, {
           method,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title, content }),
@@ -137,7 +243,7 @@
       errorEl.textContent = "";
       saveBtn.disabled = true;
       try {
-        const res = await fetch(`/api/notes/${id}`, { method: "DELETE" });
+        const res = await fetchWithUser(`/api/notes/${id}`, { method: "DELETE" });
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.detail || "Failed to delete note");
@@ -184,7 +290,11 @@
       }
     });
 
-    loadNotes();
+    document.getElementById("switch-user-btn").addEventListener("click", () => {
+      renderUserPicker(usersCache);
+    });
+
+    loadUsers(true);
   </script>
 </body>
 </html>
