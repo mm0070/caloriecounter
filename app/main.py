@@ -1112,13 +1112,13 @@ async def last7_series(request: Request):
             .group_by(func.date(Entry.ts))
             .all()
         )
-    stats_map = {
-        date.fromisoformat(row[0]): {
-            "calories": float(row[1]),
-            "protein": float(row[2]),
+        stats_map = {
+            date.fromisoformat(row[0]): {
+                "calories": float(row[1]),
+                "protein": float(row[2]),
+            }
+            for row in entry_rows
         }
-        for row in entry_rows
-    }
 
         # Moods per day
         mood_rows = (
